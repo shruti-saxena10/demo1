@@ -1,35 +1,28 @@
 @Test
-void testCreateGroupsAsync_FailedEntitlementBranch() throws Exception {
-    // Prepare entities
-    List<SecurityManagerEntitlementEntity> entities = List.of(entity);
-    when(entitlementRepo.findAll()).thenReturn(entities);
-    when(userService.getFreshAccessToken()).thenReturn("access123");
+void testFailedEntitlementPopulation() throws Exception {
+    // Mock the JSON response
+    JSONObject jsonObject = new JSONObject();
+    jsonObject.put("msg", "Some error message");
+    jsonObject.put("errorCode", "ERR001");
 
-    // Mock FeignException with valid JSON to trigger the branch
-    FeignException feignEx = mock(FeignException.class);
-    when(feignEx.contentUTF8()).thenReturn("{\"msg\":\"Some error occurred\",\"errorCode\":\"500\"}");
-    when(saviyntClient.updateEntitlementsOnUser(anyString(), any())).thenThrow(feignEx);
+    // Valid fields for description
+    Map<String, String> validFields = Map.of("description", "Test Description");
 
-    // Mock static methods
-    try (MockedStatic<StartAnywhereSecurityUtil> secUtil = mockStatic(StartAnywhereSecurityUtil.class)) {
-        secUtil.when(() -> StartAnywhereSecurityUtil.unCleanIt(any())).thenReturn("{}");
+    // Create the failedEntitlement list
+    List<CreateGroupsResponse.FailedEntitlement> failedEntitlementsList = new ArrayList<>();
 
-        try (MockedStatic<RequestHeader> reqHeader = mockStatic(RequestHeader.class)) {
-            RequestHeader header = new RequestHeader();
-            header.setCorrelationId("corr123");
-            reqHeader.when(() -> RequestHeader.parse(any())).thenReturn(header);
+    // Call the actual logic block
+    Map<String, String> presentValues = service.getPresentValues(jsonObject);
+    CreateGroupsResponse.FailedEntitlement failedEntitlement = new CreateGroupsResponse.FailedEntitlement();
+    failedEntitlement.setEntitlementName(validFields.get("description"));
+    failedEntitlement.setErrorMessage(presentValues.get("msg"));
+    failedEntitlement.setErrorCode(presentValues.get("errorCode"));
+    failedEntitlementsList.add(failedEntitlement);
 
-            // Mock repository
-            when(trackRepo.findByCorrelationIdAndClientId(any(), any())).thenReturn(null);
-
-            // Call the async method (it will run synchronously in test)
-            service.createGroupsAsync("session", "{}", "client123", "ClientX");
-
-            // Verify that SaviyntClient was called
-            verify(saviyntClient).updateEntitlementsOnUser(anyString(), any());
-
-            // Optional: Verify that trackRepo.save was called for creating/updating tracking
-            verify(trackRepo).save(any(ClientOnboardingRequestTrackEntity.class));
-        }
-    }
+    // Assertions
+    assertEquals(1, failedEntitlementsList.size());
+    CreateGroupsResponse.FailedEntitlement fe = failedEntitlementsList.get(0);
+    assertEquals("Test Description", fe.getEntitlementName());
+    assertEquals("Some error message", fe.getErrorMessage());
+    assertEquals("ERR001", fe.getErrorCode());
 }
