@@ -1,22 +1,32 @@
-@Test
-void testAddClientConfiguration_HeaderEmpty() {
-    // Arrange
-    String token = "mockToken";
-    String emptyHeader = " "; // deliberately blank
-    ClientConfigurationRequest clientConfigRequest = new ClientConfigurationRequest();
-    clientConfigRequest.setClientId("testClient");
-    clientConfigRequest.setClientName("testName");
-    clientConfigRequest.setOrgName("testOrg");
+import static org.mockito.Mockito.*;
 
-    // Act
-    ResponseEntity<Object> response = startAnywhereController.addClientConfiguration(
-            emptyHeader, token, clientConfigRequest);
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
-    // Assert
-    assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-    assertEquals("Header cannot be empty", response.getBody());
+class SaviyntLoginTest_MockMethod {
 
-    // Verify that service is never called
-    Mockito.verify(clientConfigService, Mockito.never())
-           .createClientConfiguration(Mockito.any(), Mockito.any(), Mockito.any());
+    @Test
+    void testMockLoadLoginData() {
+        // Create a spy (partial mock) of SaviyntLogin
+        SaviyntLogin spyLogin = Mockito.spy(new SaviyntLogin());
+
+        // Prepare fake LoginData
+        LoginData fakeData = new LoginData();
+        fakeData.setUsername("mockUser");
+        fakeData.setPassword("mockPass");
+
+        // Mock loadLoginData() to return fakeData
+        doReturn(fakeData).when(spyLogin).loadLoginData();
+
+        // Call getLoginData(), which internally calls loadLoginData()
+        LoginData result = spyLogin.getLoginData();
+
+        // Verify it returned mocked value
+        assertNotNull(result);
+        assertEquals("mockUser", result.getUsername());
+        assertEquals("mockPass", result.getPassword());
+
+        // Verify that loadLoginData() was actually called once
+        verify(spyLogin, times(1)).loadLoginData();
+    }
 }
