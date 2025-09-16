@@ -1,24 +1,27 @@
-
 @Test
-void handleJsonParseError_withFieldName_returnsCustomMessage() {
-    // Mock JsonMappingException.Reference
+void handleJsonParseError_withFieldName_returnsFormattedMessage() {
+    // 1. Mock the Reference (field in JSON)
     JsonMappingException.Reference ref = mock(JsonMappingException.Reference.class);
-    when(ref.getFieldName()).thenReturn("age");
+    when(ref.getFieldName()).thenReturn("age"); // << this will substitute %s
 
-    // Mock JsonMappingException and make it return the reference
+    // 2. Mock JsonMappingException and return the path with the reference
     JsonMappingException jme = mock(JsonMappingException.class);
     when(jme.getPath()).thenReturn(java.util.Collections.singletonList(ref));
 
-    // Wrap inside HttpMessageNotReadableException
-    HttpMessageNotReadableException ex = new HttpMessageNotReadableException("JSON parse error", jme);
+    // 3. Wrap it in HttpMessageNotReadableException
+    HttpMessageNotReadableException ex =
+            new HttpMessageNotReadableException("JSON parse error", jme);
 
-    // Call handler
+    // 4. Call your handler
     ResponseEntity<?> response = handler.handleJsonParseError(ex);
 
-    // Verify response
+    // 5. Assertions
     assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     BaseResponse body = (BaseResponse) response.getBody();
     assertEquals(StartAnyWhereConstants.HTTP_STATUS_BAD_REQUEST, body.getResponseCode());
     assertEquals(StartAnyWhereConstants.BAD_REQUEST, body.getResponseMessage());
-    assertEquals("Invalid value for field 'age'. Please provide a valid value.", body.getResponseDescription());
+
+    // ✅ This is the important one
+    assertEquals("Invalid value for field 'age'. Please provide a valid value.",
+                 body.getResponseDescription());
 }
