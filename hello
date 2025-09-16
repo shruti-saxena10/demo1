@@ -1,14 +1,66 @@
-    @Test
-    void testProcessJson_WhenJsonProcessingExceptionThrown_ShouldReturnNull() throws Exception {
-        // Arrange
-        String invalidJson = "invalid-json";
-        Mockito.when(objectMapper.readValue(eq(invalidJson), eq(HttpHeaders.class)))
-               .thenThrow(new JsonProcessingException("Invalid JSON") {});
+import org.mockito.ArgumentCaptor;
 
-        // Act
-        HttpHeaders result = myService.processJson(invalidJson);
+@Test
+void testCreateGroupsAsync_FailedEntitlementsSaved() throws Exception {
+    // Prepare entitlement entities
+    SecurityManagerEntitlementEntity entity1 = new SecurityManagerEntitlementEntity();
+    entity1.setDisplayName("Group-<ClientID>");
+    entity1.setDescription("Desc-<ClientID>-<ClientName>");
+    
+    SecurityManagerEntitlementEntity entity2 = new SecurityManagerEntitlementEntity();
+    entity2.setDisplayName("Group-<ClientID>");
+    entity2.setDescription("Desc-<ClientID>-<ClientName>");
+    
+    when(entitlementRepo.findAll()).thenReturn(List.of(entity1, entity2));
+    when(userService.getFreshAccessToken()).thenReturn("access123");
 
-        // Assert
-        assertNull(result, "Expected httpHeaders to be null when exception occurs");
+    // FeignException with valid JSON content
+    FeignException feignValidJson = mock(FeignException.class);
+    when(feignValidJson.contentUTF8()).thenReturn("{\"msg\":\"Error occurred\",\"errorCode\":\"500\"}");
+
+    // FeignException with invalid JSON content
+    FeignException feignInvalidJson = mock(FeignException.class);
+    when(feignInvalidJson.contentUTF8()).thenReturn("not-a-json");
+
+    // RuntimeException for generic catch block
+    RuntimeException genericEx = new RuntimeException("Unexpected error");
+
+    // Mock client to throw exceptions sequentially
+    when(saviyntClient.updateEntitlementsOnUser(anyString(), any()))
+        .thenThrow(feignValidJson)
+        .thenThrow(feignInvalidJson)
+        .thenThrow(genericEx);
+
+    // Mock static utilities
+    try (MockedStatic<StartAnywhereSecurityUtil> secUtil = mockStatic(StartAnywhereSecurityUtil.class)) {
+        secUtil.when(() -> StartAnywhereSecurityUtil.unCleanIt(any())).thenReturn("{}");
+
+        try (MockedStatic<RequestHeader> reqHeader = mockStatic(RequestHeader.class)) {
+            RequestHeader header = new RequestHeader();
+            header.setCorrelationId("corr123");
+            reqHeader.when(() -> RequestHeader.parse(any())).thenReturn(header);
+
+            // Mock tracker repo
+            when(trackRepo.findByCorrelationIdAndClientId(anyString(), anyString())).thenReturn(null);
+
+            // Capture saved entities
+            ArgumentCaptor<ClientOnboardingRequestTrackEntity> captor =
+                    ArgumentCaptor.forClass(ClientOnboardingRequestTrackEntity.class);
+
+            // Call async method
+            assertDoesNotThrow(() ->
+                service.createGroupsAsync("session", "{}", "client123", "ClientX")
+            );
+
+            // Verify save was called
+            verify(trackRepo, atLeastOnce()).save(captor.capture());
+
+            // Get the latest saved entity
+            ClientOnboardingRequestTrackEntity savedEntity = captor.getValue();
+            String outputJson = savedEntity.getOutput();
+
+            // Assert that the failed entitlements contain error messages
+            assertTrue(outputJson.contains("Error occurred") || outputJson.contains("not-a-json") || outputJson.contains("Unexpected error"));
+        }
     }
 }
