@@ -1,55 +1,26 @@
-@ExtendWith(MockitoExtension.class)
-class AsyncGroupServiceImplTest {
+@Test
+void getFreshAccessToken_tokenReturnedSuccessfully() {
+    LoginData freshLoginData = new LoginData();
+    JSONObject token = new JSONObject();
+    token.put(StartAnyWhereConstants.ACCESS_TOKEN_KEY, "fresh-token");
 
-    @InjectMocks
-    private AsyncGroupServiceImpl asyncGroupService;
+    when(saviyntLogin.getFreshLoginData()).thenReturn(freshLoginData);
+    when(saviyntClient.getAuthToken(freshLoginData)).thenReturn(token);
 
-    @Mock
-    private ConfigBean configBean;
+    String result = userService.getFreshAccessToken();
+    assertEquals("fresh-token", result);
+}
 
-    @Mock
-    private SomeDependency someDependency; // Replace with actual dependency used inside
+@Test
+void getFreshAccessToken_loginNull_returnsNull() {
+    userService.saviyntLogin = null;
+    String result = userService.getFreshAccessToken();
+    assertNull(result);
+}
 
-    @Test
-    void testRateLimitExceededCase() {
-        // given
-        when(configBean.getFallbackTime()).thenReturn(30L);
-        // also mock condition to hit rate-limit branch
-        when(someDependency.isRateLimitExceeded(any())).thenReturn(true);
-
-        // when
-        CreateGroupsResponse response = asyncGroupService.createGroups(...); // args
-
-        // then
-        assertNotNull(response);
-        assertEquals(StartAnyWhereConstants.HTTP_STATUS_RATE_LIMIT_EXCEEDED, response.getHttpStatus());
-        assertTrue(response.getMessage().contains("Rate limit exceeded"));
-    }
-
-    @Test
-    void testSuccessCase() {
-        // given
-        when(someDependency.isRateLimitExceeded(any())).thenReturn(false);
-
-        // when
-        CreateGroupsResponse response = asyncGroupService.createGroups(...);
-
-        // then
-        assertNotNull(response);
-        assertEquals(StartAnyWhereConstants.HTTP_STATUS_SUCCESS, response.getHttpStatus());
-        assertEquals(StartAnyWhereConstants.REQUEST_COMPLETED_SUCCESSFULLY, response.getMessage());
-    }
-
-    @Test
-    void testExceptionCase() {
-        // given
-        when(someDependency.isRateLimitExceeded(any()))
-                .thenThrow(new RuntimeException("Something failed"));
-
-        // when
-        CreateGroupsResponse response = asyncGroupService.createGroups(...);
-
-        // then
-        assertNotNull(response); // still returns createGroupsResponse
-    }
+@Test
+void getFreshAccessToken_loginDataNull_returnsNull() {
+    when(saviyntLogin.getFreshLoginData()).thenReturn(null);
+    String result = userService.getFreshAccessToken();
+    assertNull(result);
 }
