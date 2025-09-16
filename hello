@@ -1,19 +1,35 @@
-FeignException feignEx = mock(FeignException.class);
-when(feignEx.contentUTF8()).thenReturn("{\"msg\":\"Some error occurred\",\"errorCode\":\"500\"}");
+@Test
+void testCreateGroupsAsync_FailedEntitlementBranch() throws Exception {
+    // Prepare entities
+    List<SecurityManagerEntitlementEntity> entities = List.of(entity);
+    when(entitlementRepo.findAll()).thenReturn(entities);
+    when(userService.getFreshAccessToken()).thenReturn("access123");
 
-when(saviyntClient.updateEntitlementsOnUser(anyString(), any())).thenThrow(feignEx);
+    // Mock FeignException with valid JSON to trigger the branch
+    FeignException feignEx = mock(FeignException.class);
+    when(feignEx.contentUTF8()).thenReturn("{\"msg\":\"Some error occurred\",\"errorCode\":\"500\"}");
+    when(saviyntClient.updateEntitlementsOnUser(anyString(), any())).thenThrow(feignEx);
 
-try (MockedStatic<StartAnywhereSecurityUtil> secUtil = mockStatic(StartAnywhereSecurityUtil.class)) {
-    secUtil.when(() -> StartAnywhereSecurityUtil.unCleanIt(any())).thenReturn("{}");
+    // Mock static methods
+    try (MockedStatic<StartAnywhereSecurityUtil> secUtil = mockStatic(StartAnywhereSecurityUtil.class)) {
+        secUtil.when(() -> StartAnywhereSecurityUtil.unCleanIt(any())).thenReturn("{}");
 
-    try (MockedStatic<RequestHeader> reqHeader = mockStatic(RequestHeader.class)) {
-        RequestHeader header = new RequestHeader();
-        header.setCorrelationId("corr123");
-        reqHeader.when(() -> RequestHeader.parse(any())).thenReturn(header);
+        try (MockedStatic<RequestHeader> reqHeader = mockStatic(RequestHeader.class)) {
+            RequestHeader header = new RequestHeader();
+            header.setCorrelationId("corr123");
+            reqHeader.when(() -> RequestHeader.parse(any())).thenReturn(header);
 
-        when(trackRepo.findByCorrelationIdAndClientId(any(), any())).thenReturn(null);
+            // Mock repository
+            when(trackRepo.findByCorrelationIdAndClientId(any(), any())).thenReturn(null);
 
-        // Now call the method
-        service.createGroupsAsync("session", "{}", "client123", "ClientX");
+            // Call the async method (it will run synchronously in test)
+            service.createGroupsAsync("session", "{}", "client123", "ClientX");
+
+            // Verify that SaviyntClient was called
+            verify(saviyntClient).updateEntitlementsOnUser(anyString(), any());
+
+            // Optional: Verify that trackRepo.save was called for creating/updating tracking
+            verify(trackRepo).save(any(ClientOnboardingRequestTrackEntity.class));
+        }
     }
 }
