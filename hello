@@ -1,22 +1,24 @@
+
 @Test
-void testLoadLoginData_exceptionInDockerSecretsUtil_logsInfo() {
-    try (
-        MockedStatic<DockerSecretsUtil> dockerMock = mockStatic(DockerSecretsUtil.class);
-        MockedStatic<InfoTypeLogEventHelper> infoLogMock = mockStatic(InfoTypeLogEventHelper.class)
-    ) {
-        // Arrange: force DockerSecretsUtil.load() to throw an exception
-        dockerMock.when(DockerSecretsUtil::load).thenThrow(new RuntimeException("boom"));
+void handleJsonParseError_withFieldName_returnsCustomMessage() {
+    // Mock JsonMappingException.Reference
+    JsonMappingException.Reference ref = mock(JsonMappingException.Reference.class);
+    when(ref.getFieldName()).thenReturn("age");
 
-        // Act
-        LoginData data = saviyntLogin.loadLoginData();
+    // Mock JsonMappingException and make it return the reference
+    JsonMappingException jme = mock(JsonMappingException.class);
+    when(jme.getPath()).thenReturn(java.util.Collections.singletonList(ref));
 
-        // Assert: method returns null since exception occurred
-        assertNull(data);
+    // Wrap inside HttpMessageNotReadableException
+    HttpMessageNotReadableException ex = new HttpMessageNotReadableException("JSON parse error", jme);
 
-        // Verify log was called with expected arguments
-        infoLogMock.verify(() -> InfoTypeLogEventHelper.logInfoEvent(
-            SaviyntLogin.class.getName(),
-            "docker secrets not recived:" + "User name not found>>>>password not found>>>"
-        ));
-    }
+    // Call handler
+    ResponseEntity<?> response = handler.handleJsonParseError(ex);
+
+    // Verify response
+    assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+    BaseResponse body = (BaseResponse) response.getBody();
+    assertEquals(StartAnyWhereConstants.HTTP_STATUS_BAD_REQUEST, body.getResponseCode());
+    assertEquals(StartAnyWhereConstants.BAD_REQUEST, body.getResponseMessage());
+    assertEquals("Invalid value for field 'age'. Please provide a valid value.", body.getResponseDescription());
 }
