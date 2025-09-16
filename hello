@@ -1,31 +1,22 @@
 @Test
-void testGetClientConfigurationDetails_BadRequestValidation() {
+void testAddClientConfiguration_HeaderEmpty() {
     // Arrange
     String token = "mockToken";
-    String header = "mockHeader";
-    ClientRequest clientRequest = new ClientRequest();
-
-    // Create a mock validationResponse with BAD_REQUEST code
-    ClientConfigurationResponse validationResponse = new ClientConfigurationResponse();
-    validationResponse.setResponseCode(StartAnyWhereConstants.HTTP_STATUS_BAD_REQUEST);
-
-    // Mock service to return validationResponse
-    Mockito.when(fetchClientConfigurationService.validateClientRequest(Mockito.eq(header), Mockito.eq(clientRequest)))
-           .thenReturn(validationResponse);
+    String emptyHeader = " "; // deliberately blank
+    ClientConfigurationRequest clientConfigRequest = new ClientConfigurationRequest();
+    clientConfigRequest.setClientId("testClient");
+    clientConfigRequest.setClientName("testName");
+    clientConfigRequest.setOrgName("testOrg");
 
     // Act
-    ResponseEntity<ClientConfigurationResponse> response =
-            startAnywhereController.getClientConfigurationDetails(token, header, clientRequest);
+    ResponseEntity<Object> response = startAnywhereController.addClientConfiguration(
+            emptyHeader, token, clientConfigRequest);
 
     // Assert
     assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-    assertEquals(validationResponse, response.getBody());
+    assertEquals("Header cannot be empty", response.getBody());
 
-    // Verify that validateClientRequest was called once
-    Mockito.verify(fetchClientConfigurationService, Mockito.times(1))
-           .validateClientRequest(header, clientRequest);
-
-    // Verify getClientConfigurationDetails() should NOT be called since validation failed
-    Mockito.verify(fetchClientConfigurationService, Mockito.never())
-           .getClientConfigurationDetails(Mockito.any(), Mockito.any(), Mockito.any());
+    // Verify that service is never called
+    Mockito.verify(clientConfigService, Mockito.never())
+           .createClientConfiguration(Mockito.any(), Mockito.any(), Mockito.any());
 }
