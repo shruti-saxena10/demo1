@@ -1,52 +1,55 @@
-import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
-
-import java.util.Map;
-
-import org.json.simple.JSONObject;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Spy;
-import org.mockito.MockitoAnnotations;
-
-import com.alight.cc.startanywhere.model.CreateGroupsResponse.FailedEntitlement;
-
+@ExtendWith(MockitoExtension.class)
 class AsyncGroupServiceImplTest {
 
-    @Spy
     @InjectMocks
     private AsyncGroupServiceImpl asyncGroupService;
 
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
+    @Mock
+    private ConfigBean configBean;
+
+    @Mock
+    private SomeDependency someDependency; // Replace with actual dependency used inside
+
+    @Test
+    void testRateLimitExceededCase() {
+        // given
+        when(configBean.getFallbackTime()).thenReturn(30L);
+        // also mock condition to hit rate-limit branch
+        when(someDependency.isRateLimitExceeded(any())).thenReturn(true);
+
+        // when
+        CreateGroupsResponse response = asyncGroupService.createGroups(...); // args
+
+        // then
+        assertNotNull(response);
+        assertEquals(StartAnyWhereConstants.HTTP_STATUS_RATE_LIMIT_EXCEEDED, response.getHttpStatus());
+        assertTrue(response.getMessage().contains("Rate limit exceeded"));
     }
 
     @Test
-    void testFailedEntitlementMapping() throws Exception {
-        // Mock JSON response
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.put("msg", "Some error occurred");
-        jsonObject.put("errorCode", "ERR123");
+    void testSuccessCase() {
+        // given
+        when(someDependency.isRateLimitExceeded(any())).thenReturn(false);
 
-        // Mock validFields map
-        Map<String, String> validFields = Map.of("description", "TestEntitlement");
+        // when
+        CreateGroupsResponse response = asyncGroupService.createGroups(...);
 
-        // Spy getPresentValues to return a predefined map
-        doReturn(Map.of("msg", "Some error occurred", "errorCode", "ERR123"))
-                .when(asyncGroupService).getPresentValues(jsonObject);
+        // then
+        assertNotNull(response);
+        assertEquals(StartAnyWhereConstants.HTTP_STATUS_SUCCESS, response.getHttpStatus());
+        assertEquals(StartAnyWhereConstants.REQUEST_COMPLETED_SUCCESSFULLY, response.getMessage());
+    }
 
-        // Simulate block
-        FailedEntitlement failedEntitlement = new FailedEntitlement();
-        Map<String, String> presentValues = asyncGroupService.getPresentValues(jsonObject);
-        failedEntitlement.setEntitlementName(validFields.get("description"));
-        failedEntitlement.setErrorMessage(presentValues.get("msg"));
-        failedEntitlement.setErrorCode(presentValues.get("errorCode"));
+    @Test
+    void testExceptionCase() {
+        // given
+        when(someDependency.isRateLimitExceeded(any()))
+                .thenThrow(new RuntimeException("Something failed"));
 
-        // Assertions
-        assertEquals("TestEntitlement", failedEntitlement.getEntitlementName());
-        assertEquals("Some error occurred", failedEntitlement.getErrorMessage());
-        assertEquals("ERR123", failedEntitlement.getErrorCode());
+        // when
+        CreateGroupsResponse response = asyncGroupService.createGroups(...);
+
+        // then
+        assertNotNull(response); // still returns createGroupsResponse
     }
 }
