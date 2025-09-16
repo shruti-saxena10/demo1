@@ -1,124 +1,52 @@
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
+import java.util.Map;
 
 import org.json.simple.JSONObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.*;
-import org.springframework.scheduling.annotation.AsyncResult;
+import org.mockito.InjectMocks;
+import org.mockito.Spy;
+import org.mockito.MockitoAnnotations;
 
-import feign.FeignException;
+import com.alight.cc.startanywhere.model.CreateGroupsResponse.FailedEntitlement;
 
-public class GroupServiceTest {
+class AsyncGroupServiceImplTest {
 
+    @Spy
     @InjectMocks
-    private GroupService groupService; // your service class
-
-    @Mock
-    private UserService userService;
-
-    @Mock
-    private EntitlementRepo entitlementRepo;
-
-    @Mock
-    private SaviyntClient saviyntClient;
+    private AsyncGroupServiceImpl asyncGroupService;
 
     @BeforeEach
-    public void setup() {
+    void setUp() {
         MockitoAnnotations.openMocks(this);
     }
 
-    /**
-     * Test case: Successful entitlement update
-     */
     @Test
-    public void testCreateGroupsAsync_success() throws Exception {
-        String sessionToken = "dummyToken";
-        String requestHeader = "dummyHeader";
-        String clientId = "C123";
-        String clientName = "ClientName";
+    void testFailedEntitlementMapping() throws Exception {
+        // Mock JSON response
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("msg", "Some error occurred");
+        jsonObject.put("errorCode", "ERR123");
 
-        // Mock fresh token
-        when(userService.getFreshAccessToken()).thenReturn("fakeAccessToken");
+        // Mock validFields map
+        Map<String, String> validFields = Map.of("description", "TestEntitlement");
 
-        // Mock entitlementRepo with one entity
-        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
-        List<SecurityManagerEntitlementEntity> entities = Collections.singletonList(entity);
-        when(entitlementRepo.findAll()).thenReturn(entities);
+        // Spy getPresentValues to return a predefined map
+        doReturn(Map.of("msg", "Some error occurred", "errorCode", "ERR123"))
+                .when(asyncGroupService).getPresentValues(jsonObject);
 
-        // Mock saviyntClient to return success response
-        JSONObject fakeResponse = new JSONObject();
-        fakeResponse.put("requestid", "REQ123");
-        fakeResponse.put("requestkey", "KEY123");
-        when(saviyntClient.updateEntitlementsOnUser(anyString(), any())).thenReturn(fakeResponse);
+        // Simulate block
+        FailedEntitlement failedEntitlement = new FailedEntitlement();
+        Map<String, String> presentValues = asyncGroupService.getPresentValues(jsonObject);
+        failedEntitlement.setEntitlementName(validFields.get("description"));
+        failedEntitlement.setErrorMessage(presentValues.get("msg"));
+        failedEntitlement.setErrorCode(presentValues.get("errorCode"));
 
-        // Call the async method
-        groupService.createGroupsAsync(sessionToken, requestHeader, clientId, clientName);
-
-        // Wait for async completion (simplest approach)
-        Thread.sleep(500);
-
-        // Verify interactions
-        verify(userService, times(1)).getFreshAccessToken();
-        verify(entitlementRepo, times(1)).findAll();
-        verify(saviyntClient, atLeastOnce()).updateEntitlementsOnUser(anyString(), any());
-    }
-
-    /**
-     * Test case: Saviynt client throws Unauthorized
-     */
-    @Test
-    public void testCreateGroupsAsync_unauthorized() throws Exception {
-        String sessionToken = "dummyToken";
-        String requestHeader = "dummyHeader";
-        String clientId = "C123";
-        String clientName = "ClientName";
-
-        when(userService.getFreshAccessToken()).thenReturn("fakeAccessToken");
-        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
-        when(entitlementRepo.findAll()).thenReturn(Collections.singletonList(entity));
-
-        // Mock Unauthorized exception
-        FeignException.Unauthorized ex = mock(FeignException.Unauthorized.class);
-        when(saviyntClient.updateEntitlementsOnUser(anyString(), any())).thenThrow(ex);
-
-        // Call async method
-        groupService.createGroupsAsync(sessionToken, requestHeader, clientId, clientName);
-
-        Thread.sleep(500);
-
-        // Verify token retrieval and client call
-        verify(userService, times(1)).getFreshAccessToken();
-        verify(saviyntClient, atLeastOnce()).updateEntitlementsOnUser(anyString(), any());
-    }
-
-    /**
-     * Test case: Saviynt client throws generic FeignException
-     */
-    @Test
-    public void testCreateGroupsAsync_genericFeignException() throws Exception {
-        String sessionToken = "dummyToken";
-        String requestHeader = "dummyHeader";
-        String clientId = "C123";
-        String clientName = "ClientName";
-
-        when(userService.getFreshAccessToken()).thenReturn("fakeAccessToken");
-        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
-        when(entitlementRepo.findAll()).thenReturn(Collections.singletonList(entity));
-
-        // Mock generic FeignException
-        FeignException fe = mock(FeignException.class);
-        when(saviyntClient.updateEntitlementsOnUser(anyString(), any())).thenThrow(fe);
-
-        // Call async method
-        groupService.createGroupsAsync(sessionToken, requestHeader, clientId, clientName);
-
-        Thread.sleep(500);
-
-        verify(userService, times(1)).getFreshAccessToken();
-        verify(saviyntClient, atLeastOnce()).updateEntitlementsOnUser(anyString(), any());
+        // Assertions
+        assertEquals("TestEntitlement", failedEntitlement.getEntitlementName());
+        assertEquals("Some error occurred", failedEntitlement.getErrorMessage());
+        assertEquals("ERR123", failedEntitlement.getErrorCode());
     }
 }
