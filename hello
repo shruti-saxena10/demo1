@@ -1,26 +1,14 @@
-@Test
-void getFreshAccessToken_tokenReturnedSuccessfully() {
-    LoginData freshLoginData = new LoginData();
-    JSONObject token = new JSONObject();
-    token.put(StartAnyWhereConstants.ACCESS_TOKEN_KEY, "fresh-token");
+    @Test
+    void testProcessJson_WhenJsonProcessingExceptionThrown_ShouldReturnNull() throws Exception {
+        // Arrange
+        String invalidJson = "invalid-json";
+        Mockito.when(objectMapper.readValue(eq(invalidJson), eq(HttpHeaders.class)))
+               .thenThrow(new JsonProcessingException("Invalid JSON") {});
 
-    when(saviyntLogin.getFreshLoginData()).thenReturn(freshLoginData);
-    when(saviyntClient.getAuthToken(freshLoginData)).thenReturn(token);
+        // Act
+        HttpHeaders result = myService.processJson(invalidJson);
 
-    String result = userService.getFreshAccessToken();
-    assertEquals("fresh-token", result);
-}
-
-@Test
-void getFreshAccessToken_loginNull_returnsNull() {
-    userService.saviyntLogin = null;
-    String result = userService.getFreshAccessToken();
-    assertNull(result);
-}
-
-@Test
-void getFreshAccessToken_loginDataNull_returnsNull() {
-    when(saviyntLogin.getFreshLoginData()).thenReturn(null);
-    String result = userService.getFreshAccessToken();
-    assertNull(result);
+        // Assert
+        assertNull(result, "Expected httpHeaders to be null when exception occurs");
+    }
 }
