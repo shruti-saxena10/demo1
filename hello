@@ -1,32 +1,22 @@
-import static org.mockito.Mockito.*;
+@Test
+void testLoadLoginData_exceptionInDockerSecretsUtil_logsInfo() {
+    try (
+        MockedStatic<DockerSecretsUtil> dockerMock = mockStatic(DockerSecretsUtil.class);
+        MockedStatic<InfoTypeLogEventHelper> infoLogMock = mockStatic(InfoTypeLogEventHelper.class)
+    ) {
+        // Arrange: force DockerSecretsUtil.load() to throw an exception
+        dockerMock.when(DockerSecretsUtil::load).thenThrow(new RuntimeException("boom"));
 
-import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
+        // Act
+        LoginData data = saviyntLogin.loadLoginData();
 
-class SaviyntLoginTest_MockMethod {
+        // Assert: method returns null since exception occurred
+        assertNull(data);
 
-    @Test
-    void testMockLoadLoginData() {
-        // Create a spy (partial mock) of SaviyntLogin
-        SaviyntLogin spyLogin = Mockito.spy(new SaviyntLogin());
-
-        // Prepare fake LoginData
-        LoginData fakeData = new LoginData();
-        fakeData.setUsername("mockUser");
-        fakeData.setPassword("mockPass");
-
-        // Mock loadLoginData() to return fakeData
-        doReturn(fakeData).when(spyLogin).loadLoginData();
-
-        // Call getLoginData(), which internally calls loadLoginData()
-        LoginData result = spyLogin.getLoginData();
-
-        // Verify it returned mocked value
-        assertNotNull(result);
-        assertEquals("mockUser", result.getUsername());
-        assertEquals("mockPass", result.getPassword());
-
-        // Verify that loadLoginData() was actually called once
-        verify(spyLogin, times(1)).loadLoginData();
+        // Verify log was called with expected arguments
+        infoLogMock.verify(() -> InfoTypeLogEventHelper.logInfoEvent(
+            SaviyntLogin.class.getName(),
+            "docker secrets not recived:" + "User name not found>>>>password not found>>>"
+        ));
     }
 }
