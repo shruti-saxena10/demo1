@@ -1,40 +1,124 @@
-@Test
-void testCheckValidationBeforeAsyncC_EmptyOrNullCorrelationId() {
-    CreateGroupsResponse createGroupsResponse = new CreateGroupsResponse();
+import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-    // Mock StartAnywhereUtil.buildResponse static method
-    try (MockedStatic<StartAnywhereUtil> utilMock = mockStatic(StartAnywhereUtil.class);
-         MockedStatic<InfoTypeLogEventHelper> logMock = mockStatic(InfoTypeLogEventHelper.class);
-         MockedStatic<RequestHeader> reqHeaderMock = mockStatic(RequestHeader.class)) {
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
-        // Mock buildResponse to return our response object
-        utilMock.when(() -> StartAnywhereUtil.buildResponse(
-                any(), 
-                eq(StartAnyWhereConstants.HTTP_STATUS_BAD_REQUEST),
-                any(), any(), any(), any(), any(), any()))
-                .thenReturn(createGroupsResponse);
+import org.json.simple.JSONObject;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.*;
+import org.springframework.scheduling.annotation.AsyncResult;
 
-        // Call the method under test with empty correlationId
-        CreateGroupsResponse resultEmpty = service.checkValidationBeforeAsyncC(
-                "token", "{}", "", "ClientX");
+import feign.FeignException;
 
-        // Verify static method calls
-        utilMock.verify(() -> StartAnywhereUtil.buildResponse(
-                any(), 
-                eq(StartAnyWhereConstants.HTTP_STATUS_BAD_REQUEST),
-                any(), any(), any(), any(), any(), any()));
+public class GroupServiceTest {
 
-        logMock.verify(() -> InfoTypeLogEventHelper.logInfoEvent(
-                anyString(), eq("Correlation ID is : ")));
+    @InjectMocks
+    private GroupService groupService; // your service class
 
-        assertNotNull(resultEmpty);
-        assertEquals(createGroupsResponse, resultEmpty);
+    @Mock
+    private UserService userService;
 
-        // Call the method under test with null correlationId
-        CreateGroupsResponse resultNull = service.checkValidationBeforeAsyncC(
-                "token", "{}", null, "ClientX");
+    @Mock
+    private EntitlementRepo entitlementRepo;
 
-        assertNotNull(resultNull);
-        assertEquals(createGroupsResponse, resultNull);
+    @Mock
+    private SaviyntClient saviyntClient;
+
+    @BeforeEach
+    public void setup() {
+        MockitoAnnotations.openMocks(this);
+    }
+
+    /**
+     * Test case: Successful entitlement update
+     */
+    @Test
+    public void testCreateGroupsAsync_success() throws Exception {
+        String sessionToken = "dummyToken";
+        String requestHeader = "dummyHeader";
+        String clientId = "C123";
+        String clientName = "ClientName";
+
+        // Mock fresh token
+        when(userService.getFreshAccessToken()).thenReturn("fakeAccessToken");
+
+        // Mock entitlementRepo with one entity
+        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
+        List<SecurityManagerEntitlementEntity> entities = Collections.singletonList(entity);
+        when(entitlementRepo.findAll()).thenReturn(entities);
+
+        // Mock saviyntClient to return success response
+        JSONObject fakeResponse = new JSONObject();
+        fakeResponse.put("requestid", "REQ123");
+        fakeResponse.put("requestkey", "KEY123");
+        when(saviyntClient.updateEntitlementsOnUser(anyString(), any())).thenReturn(fakeResponse);
+
+        // Call the async method
+        groupService.createGroupsAsync(sessionToken, requestHeader, clientId, clientName);
+
+        // Wait for async completion (simplest approach)
+        Thread.sleep(500);
+
+        // Verify interactions
+        verify(userService, times(1)).getFreshAccessToken();
+        verify(entitlementRepo, times(1)).findAll();
+        verify(saviyntClient, atLeastOnce()).updateEntitlementsOnUser(anyString(), any());
+    }
+
+    /**
+     * Test case: Saviynt client throws Unauthorized
+     */
+    @Test
+    public void testCreateGroupsAsync_unauthorized() throws Exception {
+        String sessionToken = "dummyToken";
+        String requestHeader = "dummyHeader";
+        String clientId = "C123";
+        String clientName = "ClientName";
+
+        when(userService.getFreshAccessToken()).thenReturn("fakeAccessToken");
+        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
+        when(entitlementRepo.findAll()).thenReturn(Collections.singletonList(entity));
+
+        // Mock Unauthorized exception
+        FeignException.Unauthorized ex = mock(FeignException.Unauthorized.class);
+        when(saviyntClient.updateEntitlementsOnUser(anyString(), any())).thenThrow(ex);
+
+        // Call async method
+        groupService.createGroupsAsync(sessionToken, requestHeader, clientId, clientName);
+
+        Thread.sleep(500);
+
+        // Verify token retrieval and client call
+        verify(userService, times(1)).getFreshAccessToken();
+        verify(saviyntClient, atLeastOnce()).updateEntitlementsOnUser(anyString(), any());
+    }
+
+    /**
+     * Test case: Saviynt client throws generic FeignException
+     */
+    @Test
+    public void testCreateGroupsAsync_genericFeignException() throws Exception {
+        String sessionToken = "dummyToken";
+        String requestHeader = "dummyHeader";
+        String clientId = "C123";
+        String clientName = "ClientName";
+
+        when(userService.getFreshAccessToken()).thenReturn("fakeAccessToken");
+        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
+        when(entitlementRepo.findAll()).thenReturn(Collections.singletonList(entity));
+
+        // Mock generic FeignException
+        FeignException fe = mock(FeignException.class);
+        when(saviyntClient.updateEntitlementsOnUser(anyString(), any())).thenThrow(fe);
+
+        // Call async method
+        groupService.createGroupsAsync(sessionToken, requestHeader, clientId, clientName);
+
+        Thread.sleep(500);
+
+        verify(userService, times(1)).getFreshAccessToken();
+        verify(saviyntClient, atLeastOnce()).updateEntitlementsOnUser(anyString(), any());
     }
 }
