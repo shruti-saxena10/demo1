@@ -1,28 +1,40 @@
 @Test
-void testFailedEntitlementPopulation() throws Exception {
-    // Mock the JSON response
-    JSONObject jsonObject = new JSONObject();
-    jsonObject.put("msg", "Some error message");
-    jsonObject.put("errorCode", "ERR001");
+void testCheckValidationBeforeAsyncC_EmptyOrNullCorrelationId() {
+    CreateGroupsResponse createGroupsResponse = new CreateGroupsResponse();
 
-    // Valid fields for description
-    Map<String, String> validFields = Map.of("description", "Test Description");
+    // Mock StartAnywhereUtil.buildResponse static method
+    try (MockedStatic<StartAnywhereUtil> utilMock = mockStatic(StartAnywhereUtil.class);
+         MockedStatic<InfoTypeLogEventHelper> logMock = mockStatic(InfoTypeLogEventHelper.class);
+         MockedStatic<RequestHeader> reqHeaderMock = mockStatic(RequestHeader.class)) {
 
-    // Create the failedEntitlement list
-    List<CreateGroupsResponse.FailedEntitlement> failedEntitlementsList = new ArrayList<>();
+        // Mock buildResponse to return our response object
+        utilMock.when(() -> StartAnywhereUtil.buildResponse(
+                any(), 
+                eq(StartAnyWhereConstants.HTTP_STATUS_BAD_REQUEST),
+                any(), any(), any(), any(), any(), any()))
+                .thenReturn(createGroupsResponse);
 
-    // Call the actual logic block
-    Map<String, String> presentValues = service.getPresentValues(jsonObject);
-    CreateGroupsResponse.FailedEntitlement failedEntitlement = new CreateGroupsResponse.FailedEntitlement();
-    failedEntitlement.setEntitlementName(validFields.get("description"));
-    failedEntitlement.setErrorMessage(presentValues.get("msg"));
-    failedEntitlement.setErrorCode(presentValues.get("errorCode"));
-    failedEntitlementsList.add(failedEntitlement);
+        // Call the method under test with empty correlationId
+        CreateGroupsResponse resultEmpty = service.checkValidationBeforeAsyncC(
+                "token", "{}", "", "ClientX");
 
-    // Assertions
-    assertEquals(1, failedEntitlementsList.size());
-    CreateGroupsResponse.FailedEntitlement fe = failedEntitlementsList.get(0);
-    assertEquals("Test Description", fe.getEntitlementName());
-    assertEquals("Some error message", fe.getErrorMessage());
-    assertEquals("ERR001", fe.getErrorCode());
+        // Verify static method calls
+        utilMock.verify(() -> StartAnywhereUtil.buildResponse(
+                any(), 
+                eq(StartAnyWhereConstants.HTTP_STATUS_BAD_REQUEST),
+                any(), any(), any(), any(), any(), any()));
+
+        logMock.verify(() -> InfoTypeLogEventHelper.logInfoEvent(
+                anyString(), eq("Correlation ID is : ")));
+
+        assertNotNull(resultEmpty);
+        assertEquals(createGroupsResponse, resultEmpty);
+
+        // Call the method under test with null correlationId
+        CreateGroupsResponse resultNull = service.checkValidationBeforeAsyncC(
+                "token", "{}", null, "ClientX");
+
+        assertNotNull(resultNull);
+        assertEquals(createGroupsResponse, resultNull);
+    }
 }
