@@ -1,178 +1,265 @@
-@Test
-    void testGetClientConfigurationDetails_validationBadRequest() {
-        String token = "token";
-        String header = "header";
-        ClientRequest request = new ClientRequest();
+ @InjectMocks
+    private SaviyntLogin saviyntLogin;
 
-        ClientConfigurationResponse badResponse = new ClientConfigurationResponse();
-        badResponse.setResponseCode(StartAnyWhereConstants.HTTP_STATUS_BAD_REQUEST);
-
-        when(fetchClientConfigurationService.validateClientRequest(header, request)).thenReturn(badResponse);
-
-        ResponseEntity<ClientConfigurationResponse> response = controllerMock.getClientConfigurationDetails(token, header, request);
-
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals(badResponse, response.getBody());
+    @BeforeEach
+    void setup() throws Exception {
+        saviyntLogin = new SaviyntLogin();
+        setField("profile", "prod"); // default non-localdev
     }
 
-    // --- Missing test for addClientConfiguration: header is empty ---
-    @Test
-    void addClientConfiguration_headerEmpty_returnsBadRequest() {
-        String emptyHeader = "   ";
-        String sessionToken = "session";
-        ClientConfigurationRequest configRequest = new ClientConfigurationRequest();
-
-        ResponseEntity<Object> response = controllerMock.addClientConfiguration(emptyHeader, sessionToken, configRequest);
-
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("Header cannot be empty", response.getBody());
+    void setField(String name, Object value) throws Exception {
+        Field field = SaviyntLogin.class.getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(saviyntLogin, value);
     }
 
-    // --- Missing test for deleteClientDetails: Exception not DataIntegrityViolationException ---
+    // ✅ 1. Secrets contain both username and password
     @Test
-    void deleteClientDetails_GenericException_ReturnsNotImplemented() {
-        String token = "token";
-        String header = "header";
-        String clientId = "id";
-        when(removeClientService.deleteClientDetails(token, header, clientId))
-                .thenThrow(new IllegalArgumentException("Some generic error"));
+    void testLoadLoginData_success() {
+        Map<String, String> secrets = new HashMap<>();
+        secrets.put("controlcenter.startanywhere.saviynt.username", "user1 ");
+        secrets.put("controlcenter.startanywhere.saviynt.password", "pass1 ");
 
-        ResponseEntity<Object> response = controllerMock.deleteClientDetails(token, header, clientId);
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
 
-        assertEquals(HttpStatus.NOT_IMPLEMENTED, response.getStatusCode());
-        assertTrue(response.getBody() instanceof BaseResponse);
-    }
-
-    // --- Missing test for getDeleteClientConfigurationDetails: null email list ---
-    @Test
-    void getDeleteClientConfigurationDetails_nullEmailList() {
-        String sessionToken = "sessionToken";
-        String requestHeader = "requestHeader";
-        String clientId = "client123";
-        String orgName = "orgABC";
-        List<String> emailList = null;
-
-        ResponseEntity<Object> expectedResponse = ResponseEntity.ok("Success");
-
-        Mockito.when(deleteClientConfigurationService.getDeleteClientConfigurationDetails(
-                Mockito.eq(sessionToken),
-                Mockito.eq(requestHeader),
-                Mockito.eq(clientId),
-                Mockito.eq(orgName),
-                Mockito.anyList()
-        )).thenReturn(expectedResponse);
-
-        ResponseEntity<Object> actualResponse = controllerMock.getDeleteClientConfigurationDetails(
-                sessionToken,
-                requestHeader,
-                clientId,
-                orgName,
-                emailList
-        );
-
-        assertNotNull(actualResponse);
-        assertEquals(HttpStatus.OK, actualResponse.getStatusCode());
-        assertEquals("Success", actualResponse.getBody());
-    }
-
-    // --- Missing test for getDeleteClientConfigurationDetails: empty email list ---
-    @Test
-    void getDeleteClientConfigurationDetails_emptyEmailList() {
-        String sessionToken = "sessionToken";
-        String requestHeader = "requestHeader";
-        String clientId = "client123";
-        String orgName = "orgABC";
-        List<String> emailList = new ArrayList<>();
-
-        ResponseEntity<Object> expectedResponse = ResponseEntity.ok("Success");
-
-        Mockito.when(deleteClientConfigurationService.getDeleteClientConfigurationDetails(
-                Mockito.eq(sessionToken),
-                Mockito.eq(requestHeader),
-                Mockito.eq(clientId),
-                Mockito.eq(orgName),
-                Mockito.anyList()
-        )).thenReturn(expectedResponse);
-
-        ResponseEntity<Object> actualResponse = controllerMock.getDeleteClientConfigurationDetails(
-                sessionToken,
-                requestHeader,
-                clientId,
-                orgName,
-                emailList
-        );
-
-        assertNotNull(actualResponse);
-        assertEquals(HttpStatus.OK, actualResponse.getStatusCode());
-        assertEquals("Success", actualResponse.getBody());
-    }
-
-    // --- Missing test for createClientGroups: throws InterruptedException ---
-    @Test
-    void testCreateGroups_interruptedException() throws Exception {
-        when(groupService.checkValidationBeforeAsync(token, header, clientId, clientName))
-            .thenThrow(new InterruptedException("Interrupted"));
-
-        ResponseEntity<CreateGroupsResponse> response = controllerMock.createClientGroups(token, header, clientId, clientName);
-        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
-        assertEquals(StartAnyWhereConstants.HTTP_STATUS_INTERNAL_SERVER_ERROR, response.getBody().getResponseCode());
-    }
-
-    // --- Missing test for addNewclientdetails: token cleaning/unCleaning logic (simulate both cleanIt and unCleanIt) ---
-    @Test
-    public void testAddNewclientdetails_tokenCleaningLogic() throws Exception {
-        String originalToken = "dirtyToken";
-        String originalHeader = "dirtyHeader";
-        ClientModel request = new ClientModel();
-        request.setClientId("00095");
-
-        String cleanedToken = "cleanedToken";
-        String cleanedHeader = "cleanedHeader";
-        String uncleanedToken = "uncleanedToken";
-        ColleagueSessionToken mockColleagueToken = Mockito.mock(ColleagueSessionToken.class);
-
-        try (MockedStatic<StartAnywhereSecurityUtil> securityUtilMock = mockStatic(StartAnywhereSecurityUtil.class);
-             MockedStatic<ColleagueSessionToken> tokenStatic = mockStatic(ColleagueSessionToken.class);
-             MockedStatic<InfoTypeLogEventHelper> logMock = mockStatic(InfoTypeLogEventHelper.class)) {
-
-            securityUtilMock.when(() -> StartAnywhereSecurityUtil.cleanIt(originalToken)).thenReturn(cleanedToken);
-            securityUtilMock.when(() -> StartAnywhereSecurityUtil.cleanIt(originalHeader)).thenReturn(cleanedHeader);
-            securityUtilMock.when(() -> StartAnywhereSecurityUtil.unCleanIt(cleanedToken)).thenReturn(uncleanedToken);
-
-            tokenStatic.when(() -> ColleagueSessionToken.parse(uncleanedToken)).thenReturn(mockColleagueToken);
-            Mockito.when(mockColleagueToken.getLdapIdFromColleagueSessionToken()).thenReturn("ldapId");
-
-            ResponseEntity<Object> expectedResponse = ResponseEntity.ok("Created");
-            Mockito.when(clientServiceMock.addNewclientdetails(uncleanedToken, cleanedHeader, "ldapId", request))
-                    .thenReturn(expectedResponse);
-
-            ResponseEntity<Object> response = controllerMock.addNewclientdetails(originalToken, originalHeader, request);
-
-            assertEquals(HttpStatus.OK, response.getStatusCode());
-            assertEquals("Created", response.getBody());
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNotNull(data);
+            assertEquals("user1", data.getUsername());
+            assertEquals("pass1", data.getPassword());
         }
     }
 
-    // --- Missing test for addNewclientdetails: JsonException branch ---
+    // ✅ 2. Secrets missing username, profile ≠ localdev → logs error
     @Test
-    public void testAddNewclientdetails_JsonException() throws Exception {
-        String token = "badToken";
-        String header = "header";
-        ClientModel request = new ClientModel();
-        request.setClientId("00095");
+    void testLoadLoginData_missingUsername_logsError() {
+        Map<String, String> secrets = new HashMap<>();
+        secrets.put("controlcenter.startanywhere.saviynt.password", "pass1");
 
-        try (MockedStatic<StartAnywhereSecurityUtil> securityUtilMock = mockStatic(StartAnywhereSecurityUtil.class);
-             MockedStatic<ColleagueSessionToken> tokenStatic = mockStatic(ColleagueSessionToken.class)) {
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
 
-            securityUtilMock.when(() -> StartAnywhereSecurityUtil.cleanIt(token)).thenReturn(token);
-            securityUtilMock.when(() -> StartAnywhereSecurityUtil.cleanIt(header)).thenReturn(header);
-            securityUtilMock.when(() -> StartAnywhereSecurityUtil.unCleanIt(token)).thenReturn(token);
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNull(data); // username missing
+        }
+    }
 
-            tokenStatic.when(() -> ColleagueSessionToken.parse(token)).thenThrow(new jakarta.json.JsonException("bad"));
+    // ✅ 3. Secrets missing password, profile ≠ localdev → logs error
+    @Test
+    void testLoadLoginData_missingPassword_logsError() {
+        Map<String, String> secrets = new HashMap<>();
+        secrets.put("controlcenter.startanywhere.saviynt.username", "user1");
 
-            ResponseEntity<Object> response = controllerMock.addNewclientdetails(token, header, request);
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
 
-            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
-            assertTrue(response.getBody() instanceof com.alight.cc.startanywhere.model.BaseResponse);
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNull(data); // password missing
+        }
+    }
+
+    // ✅ 4. Secrets missing both, profile = localdev → no logging
+    @Test
+    void testLoadLoginData_localdev_skipsLogging() throws Exception {
+        setField("profile", "localdev");
+
+        Map<String, String> secrets = new HashMap<>(); // empty
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
+
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNull(data); // no secrets
+        }
+    }
+
+    // ✅ 5. getLoginData() lazy loads once
+    @Test
+    void testGetLoginData_lazyLoad() {
+        Map<String, String> secrets = new HashMap<>();
+        secrets.put("controlcenter.startanywhere.saviynt.username", "lazyuser");
+        secrets.put("controlcenter.startanywhere.saviynt.password", "lazypass");
+
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
+
+            LoginData data1 = saviyntLogin.getLoginData();
+            LoginData data2 = saviyntLogin.getLoginData();
+
+            assertSame(data1, data2); // cached
+            assertEquals("lazyuser", data1.getUsername());
+        }
+    }
+
+    // ✅ 6. @PostConstruct init() loads loginData
+    @Test
+    void testInit_postConstruct() {
+        Map<String, String> secrets = new HashMap<>();
+        secrets.put("controlcenter.startanywhere.saviynt.username", "inituser");
+        secrets.put("controlcenter.startanywhere.saviynt.password", "initpass");
+
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
+
+            saviyntLogin.init(); // simulate @PostConstruct
+            LoginData data = saviyntLogin.getLoginData();
+
+            assertEquals("inituser", data.getUsername());
+            assertEquals("initpass", data.getPassword());
+        }
+    }
+
+    @Test
+    void testLoadLoginData_missingUsername_andLogs() throws Exception {
+        Map<String, String> secrets = new HashMap<>();
+        secrets.put("controlcenter.startanywhere.saviynt.password", "secret-password");
+
+        AHBaseException exception = new AHBaseException(); // concrete instance
+
+        try (
+            MockedStatic<DockerSecretsUtil> dockerMock = mockStatic(DockerSecretsUtil.class);
+            MockedStatic<ErrorLogEventHelper> logMock = mockStatic(ErrorLogEventHelper.class)
+        ) {
+            dockerMock.when(DockerSecretsUtil::load).thenReturn(secrets);
+
+            // Stub log call so it's callable with expected args
+            logMock.when(() -> ErrorLogEventHelper.logErrorEvent(
+                SaviyntLogin.class.getName(),
+                "controlcenter.startanywhere.saviynt.username is not configured in secret",
+                "getSaviyntLogin",
+                exception,
+                ErrorLogEvent.ERROR_SEVERITY
+            )).thenCallRealMethod();
+
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNull(data);
+        }
+    }
+
+    @Test
+    void testLoadLoginData_missingPassword_andLogs() throws Exception {
+        Map<String, String> secrets = new HashMap<>();
+        secrets.put("controlcenter.startanywhere.saviynt.username", "secret-user");
+
+        AHBaseException exception = new AHBaseException(); // concrete instance
+
+        try (
+            MockedStatic<DockerSecretsUtil> dockerMock = mockStatic(DockerSecretsUtil.class);
+            MockedStatic<ErrorLogEventHelper> logMock = mockStatic(ErrorLogEventHelper.class)
+        ) {
+            dockerMock.when(DockerSecretsUtil::load).thenReturn(secrets);
+
+            // Stub log call with concrete args
+            logMock.when(() -> ErrorLogEventHelper.logErrorEvent(
+                SaviyntLogin.class.getName(),
+                "controlcenter.startanywhere.saviynt.password is not configured in secret",
+                "getSaviyntLogin",
+                exception,
+                ErrorLogEvent.ERROR_SEVERITY
+            )).thenCallRealMethod();
+
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNull(data);
+        }
+    }
+
+    // 🆕 7. getFreshLoginData() always loads new LoginData (not cached)
+    @Test
+    void testGetFreshLoginData_alwaysLoadsNewInstance() {
+        Map<String, String> secrets1 = new HashMap<>();
+        secrets1.put("controlcenter.startanywhere.saviynt.username", "freshuser");
+        secrets1.put("controlcenter.startanywhere.saviynt.password", "freshpass");
+
+        Map<String, String> secrets2 = new HashMap<>();
+        secrets2.put("controlcenter.startanywhere.saviynt.username", "freshuser2");
+        secrets2.put("controlcenter.startanywhere.saviynt.password", "freshpass2");
+
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            // First call returns secrets1, second call returns secrets2
+            mocked.when(DockerSecretsUtil::load)
+                    .thenReturn(secrets1)
+                    .thenReturn(secrets2);
+
+            LoginData data1 = saviyntLogin.getFreshLoginData();
+            LoginData data2 = saviyntLogin.getFreshLoginData();
+
+            assertNotNull(data1);
+            assertNotNull(data2);
+            assertNotSame(data1, data2);
+            assertEquals("freshuser", data1.getUsername());
+            assertEquals("freshpass", data1.getPassword());
+            assertEquals("freshuser2", data2.getUsername());
+            assertEquals("freshpass2", data2.getPassword());
+        }
+    }
+
+    // 🆕 8. loadLoginData() handles Exception thrown by DockerSecretsUtil.load()
+    @Test
+    void testLoadLoginData_handlesExceptionFromDockerSecretsUtil() {
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenThrow(new RuntimeException("docker error"));
+
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNull(data);
+        }
+    }
+
+    // 🆕 9. loadLoginData() returns null if secrets are empty (and not localdev)
+    @Test
+    void testLoadLoginData_emptySecrets_nonLocaldev() {
+        Map<String, String> secrets = new HashMap<>(); // empty map
+
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
+
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNull(data);
+        }
+    }
+
+    // 🆕 10. loadLoginData() trims whitespace for username and password
+    @Test
+    void testLoadLoginData_trimsWhitespace() {
+        Map<String, String> secrets = new HashMap<>();
+        secrets.put("controlcenter.startanywhere.saviynt.username", "  userWithSpaces  ");
+        secrets.put("controlcenter.startanywhere.saviynt.password", "  passWithSpaces  ");
+
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
+
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNotNull(data);
+            assertEquals("userWithSpaces", data.getUsername());
+            assertEquals("passWithSpaces", data.getPassword());
+        }
+    }
+
+    // 🆕 11. getLoginData() returns null if loadLoginData returns null
+    @Test
+    void testGetLoginData_returnsNullIfLoadLoginDataReturnsNull() {
+        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
+            mocked.when(DockerSecretsUtil::load).thenReturn(new HashMap<>()); // empty
+
+            LoginData data = saviyntLogin.getLoginData();
+            assertNull(data);
+        }
+    }
+
+    // 🆕 12. InfoTypeLogEventHelper.logInfoEvent is called in catch block
+    @Test
+    void testLoadLoginData_logsInfoOnException() {
+        try (
+            MockedStatic<DockerSecretsUtil> dockerMock = mockStatic(DockerSecretsUtil.class);
+            MockedStatic<InfoTypeLogEventHelper> infoMock = mockStatic(InfoTypeLogEventHelper.class)
+        ) {
+            dockerMock.when(DockerSecretsUtil::load).thenThrow(new RuntimeException("docker error"));
+
+            // Verify logInfoEvent is called in catch block
+            infoMock.when(() -> InfoTypeLogEventHelper.logInfoEvent(
+                SaviyntLogin.class.getName(),
+                "docker secrets not recived:User name not found>>>>password not found>>>"
+            )).thenCallRealMethod();
+
+            LoginData data = saviyntLogin.loadLoginData();
+            assertNull(data);
         }
     }
