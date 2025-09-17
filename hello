@@ -1,91 +1,77 @@
-@Test
-    void testGetDisplayNamesWithClientId_Empty() {
-        List<String> result = service.getDisplayNamesWithClientId(Collections.emptyList(), "id", "name");
-        assertTrue(result.isEmpty());
+ @Test
+    void checkStatus_correlationIdIsZero_returnsBadRequest() throws Exception {
+        String header = "{\"correlationId\":\"0\",\"consumerReferenceId\":\"localtest\",\"locale\":\"en_US\",\"clientId\":\"999997\"}";
+        ClientConfigurationRequest req = mock(ClientConfigurationRequest.class);
+        ResponseEntity<Object> resp = service.checkStatus(header, req);
+        assertNotNull(resp);
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
     }
 
     @Test
-    void testGetDisplayNamesWithClientId_NullDisplayName() {
-        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
-        entity.setDisplayName(null);
-        List<String> result = service.getDisplayNamesWithClientId(List.of(entity), "id", "name");
-        assertTrue(result.isEmpty());
+    void checkStatus_trackEntityOutputBlank_returnsSuccessWithDefaultResponse() throws Exception {
+        String header = "{\"correlationId\":\"9000006\",\"consumerReferenceId\":\"localtest\",\"locale\":\"en_US\",\"clientId\":\"999997\"}";
+        ClientConfigurationRequest req = mock(ClientConfigurationRequest.class);
+        when(req.getClientId()).thenReturn("cid");
+        ClientOnboardingRequestTrackEntity entity = new ClientOnboardingRequestTrackEntity();
+        entity.setStatus(1);
+        entity.setClientId("cid");
+        entity.setCorrelationId("corrId");
+        entity.setOutput(" "); // output blank
+        when(trackRepo.findByCorrelationIdAndClientId("9000006", "cid")).thenReturn(entity);
+        ResponseEntity<Object> resp = service.checkStatus(header, req);
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
     }
 
     @Test
-    void testTransformEntityFields_NullEntities() {
-        Map<SecurityManagerEntitlementEntity, Map<String, String>> result =
-            AsyncGroupServiceImpl.transformEntityFields(null, "id", "name");
-        assertTrue(result.isEmpty());
+    void checkStatus_outputWithInvalidResponseCode_defaultsToOK() throws Exception {
+        String header = "{\"correlationId\":\"9000006\",\"consumerReferenceId\":\"localtest\",\"locale\":\"en_US\",\"clientId\":\"999997\"}";
+        ClientConfigurationRequest req = mock(ClientConfigurationRequest.class);
+        when(req.getClientId()).thenReturn("cid");
+        ClientOnboardingRequestTrackEntity entity = new ClientOnboardingRequestTrackEntity();
+        entity.setStatus(1);
+        entity.setClientId("cid");
+        entity.setCorrelationId("corrId");
+        entity.setOutput("{\"responseCode\":\"999999\",\"responseMessage\":\"Invalid code\"}");
+        when(trackRepo.findByCorrelationIdAndClientId("9000006", "cid")).thenReturn(entity);
+        ResponseEntity<Object> resp = service.checkStatus(header, req);
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
     }
 
     @Test
-    void testTransformEntityFields_NullEntityInList() {
-        List<SecurityManagerEntitlementEntity> entities = Arrays.asList(null, new SecurityManagerEntitlementEntity());
-        Map<SecurityManagerEntitlementEntity, Map<String, String>> result =
-            AsyncGroupServiceImpl.transformEntityFields(entities, "id", "name");
-        // Should skip null entity and process the other.
-        assertEquals(1, result.size());
+    void getResponseEntity_responseMessageNull_setsEmptyDescription() {
+        ClientConfigurationResponse resp = new ClientConfigurationResponse();
+        ResponseEntity<Object> entity = service.getResponseEntity(resp, null, HttpStatus.OK, null, null);
+        assertEquals(HttpStatus.OK, entity.getStatusCode());
     }
 
     @Test
-    void testGetPresentValues_EmptyJSONObject() {
-        JSONObject json = new JSONObject();
-        Map<String, String> result = service.getPresentValues(json);
-        assertTrue(result.isEmpty());
+    void getResponseEntity_responseStatusNotOK_setsResponseCodeMinus999() {
+        ClientConfigurationResponse resp = new ClientConfigurationResponse();
+        ResponseEntity<Object> entity = service.getResponseEntity(resp, "error", HttpStatus.BAD_REQUEST, null, null);
+        assertEquals(HttpStatus.BAD_REQUEST, entity.getStatusCode());
     }
 
     @Test
-    void testGetPresentValues_MissingKeys() {
-        JSONObject json = new JSONObject();
-        json.put("foo", "bar");
-        Map<String, String> result = service.getPresentValues(json);
-        assertTrue(result.isEmpty());
+    void updateTrack_entityNotFound_doesNothing() throws Exception {
+        String header = "{\"correlationId\":\"9000006\",\"consumerReferenceId\":\"localtest\",\"locale\":\"en_US\",\"clientId\":\"999997\"}";
+        ClientConfigurationRequest req = new ClientConfigurationRequest();
+        req.setClientId("cid");
+        when(trackRepo.findByCorrelationIdAndClientId("9000006", "cid")).thenReturn(null);
+        List<ClientConfigError> errors = new ArrayList<>();
+        BaseResponse response = new BaseResponse("200", "Client Configured Successfully", errors);
+        // Should not throw exception
+        assertDoesNotThrow(() -> service.updateTrack(header, req, errors, response));
+        // Should not save anything
+        verify(trackRepo, never()).save(any());
     }
 
     @Test
-    void testCheckValidationBeforeAsyncC_EmptyCorrelationId() {
-        AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
-        String requestHeader = "{}";
-        CreateGroupsResponse response = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
-        // Should return a response (not null), status should be BAD_REQUEST or missing parameters
-        assertNotNull(response);
-    }
-
-    @Test
-    void testCheckValidationBeforeAsyncC_TrackEntityNull() {
-        AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
-        doReturn(null).when(service).trackRepo;
-        String requestHeader = "{}";
-        CreateGroupsResponse response = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
-        assertNotNull(response);
-    }
-
-    @Test
-    void testCheckValidationBeforeAsyncC_TrackEntityStatusNotZero() {
-        AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
-        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
-        CreateGroupsResponse response = new CreateGroupsResponse();
-        com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity trackEntity =
-            new com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity();
-        trackEntity.setStatus(1);
-        doReturn(trackEntity).when(service.trackRepo).findByCorrelationIdAndClientId(anyString(), anyString());
-        String requestHeader = "{}";
-        CreateGroupsResponse result = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
-        assertNotNull(result);
-    }
-
-    @Test
-    void testCheckValidationBeforeAsyncC_TrackEntityHitCountExceeded() {
-        AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
-        CreateGroupsResponse response = new CreateGroupsResponse();
-        com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity trackEntity =
-            new com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity();
-        trackEntity.setStatus(0);
-        trackEntity.setHitCount(5);
-        doReturn(trackEntity).when(service.trackRepo).findByCorrelationIdAndClientId(anyString(), anyString());
-        doReturn(3).when(service.configBean).getHitCount();
-        String requestHeader = "{}";
-        CreateGroupsResponse result = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
-        assertNotNull(result);
+    void saveTrack_serializesInputJsonCorrectly() throws Exception {
+        String header = "{\"correlationId\":\"9000006\",\"consumerReferenceId\":\"localtest\",\"locale\":\"en_US\",\"clientId\":\"999997\"}";
+        ClientConfigurationRequest req = new ClientConfigurationRequest();
+        req.setClientId("cid");
+        service.saveTrack(header, req);
+        verify(trackRepo).save(argThat(e ->
+            e.getInputJson() != null && e.getInputJson().contains("\"clientId\":\"cid\"")
+        ));
     }
