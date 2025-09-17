@@ -1,125 +1,122 @@
-  @Test
-    void createClientConfiguration_targetEntitlementsMissing_returnsInternalServerError() throws Exception {
-        // Covers the branch where entitlementList.size() < 3
-        setupHappyPathForEntitlements2(2, List.of(new EntitlementDetail() {{ setDisplayname("groupcid"); }}));
-        try (MockedStatic<InfoTypeLogEventHelper> logMock = mockStatic(InfoTypeLogEventHelper.class);
-             MockedStatic<StartAnywhereUtil> utilMock = mockStatic(StartAnywhereUtil.class)) {
-            BaseResponse resp = new BaseResponse();
-            utilMock.when(() -> StartAnywhereUtil.buildResponse(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(resp);
+@Test
+void testConstructEntitlementRequest_NullParams() {
+    UpdateUserEntitlementsRequest req = service.constructEntitlementRequest(null, null);
+    assertNotNull(req);
+    assertNull(req.getDisplayname());
+    assertNull(req.getDescription());
+}
 
-            ResponseEntity<Object> result = service.createClientConfiguration(alightRequestHeader, alightColleagueSessionToken, configRequest);
+@Test
+void testGetDisplayNamesWithClientId_NullClientIdOrName() {
+    entity.setDisplayName("Group-<ClientID>");
+    List<String> result1 = service.getDisplayNamesWithClientId(List.of(entity), null, "ClientX");
+    assertTrue(result1.get(0).contains("null"));
+    List<String> result2 = service.getDisplayNamesWithClientId(List.of(entity), "123", null);
+    assertTrue(result2.get(0).contains("123"));
+}
 
-            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, result.getStatusCode());
+@Test
+void testGetDisplayNamesWithClientId_DisplayNameNoPlaceholder() {
+    entity.setDisplayName("NoPlaceholder");
+    List<String> result = service.getDisplayNamesWithClientId(List.of(entity), "id", "name");
+    assertTrue(result.get(0).startsWith("NoPlaceholder"));
+}
+
+@Test
+void testTransformEntityFields_EmptyClientIdName() {
+    entity.setDisplayName("Group-<ClientID>");
+    entity.setDescription("Desc-<ClientID>-<ClientName>");
+    List<SecurityManagerEntitlementEntity> entities = List.of(entity);
+    Map<SecurityManagerEntitlementEntity, Map<String, String>> result =
+            AsyncGroupServiceImpl.transformEntityFields(entities, "", "");
+    assertEquals("Group-", result.get(entity).get("displayName"));
+    assertEquals("Desc--", result.get(entity).get("description"));
+}
+
+@Test
+void testTransformEntityFields_EntityWithNoDisplayNameOrDescription() {
+    SecurityManagerEntitlementEntity e = new SecurityManagerEntitlementEntity();
+    List<SecurityManagerEntitlementEntity> entities = List.of(e);
+    Map<SecurityManagerEntitlementEntity, Map<String, String>> result =
+            AsyncGroupServiceImpl.transformEntityFields(entities, "cid", "cname");
+    assertEquals("", result.get(e).get("displayName"));
+    assertEquals("", result.get(e).get("description"));
+}
+
+@Test
+void testGetPresentValues_AllKeysMissing() {
+    JSONObject json = new JSONObject();
+    Map<String, String> result = service.getPresentValues(json);
+    assertTrue(result.isEmpty());
+}
+
+@Test
+void testGetPresentValues_SomeKeysPresent() {
+    JSONObject json = new JSONObject();
+    json.put("msg", "Partial");
+    Map<String, String> result = service.getPresentValues(json);
+    assertEquals("Partial", result.get("msg"));
+    assertFalse(result.containsKey("errorCode"));
+}
+
+@Test
+void testSaveTrack_TrackRepoThrowsException() throws Exception {
+    CreateGroupsResponse response = new CreateGroupsResponse();
+    response.setClientId("client123");
+    RequestHeader header = new RequestHeader();
+    header.setCorrelationId("corr123");
+    String rawHeader = new ObjectMapper().writeValueAsString(header);
+
+    when(trackRepo.findByCorrelationIdAndClientId("corr123", "client123")).thenThrow(new RuntimeException("DB error"));
+
+    try (MockedStatic<StartAnywhereSecurityUtil> secUtil = mockStatic(StartAnywhereSecurityUtil.class)) {
+        secUtil.when(() -> StartAnywhereSecurityUtil.unCleanIt(any())).thenReturn(rawHeader);
+        try (MockedStatic<RequestHeader> reqHeader = mockStatic(RequestHeader.class)) {
+            reqHeader.when(() -> RequestHeader.parse(any())).thenReturn(header);
+            assertDoesNotThrow(() -> service.saveTrack(rawHeader, response));
         }
     }
+}
 
-    @Test
-    void createClientConfiguration_noValidMail_returnsInternalServerError_branch() throws Exception {
-        // Uncommented branch: return if no validMailMap and the commented-out block is active
-        setupHappyPathForEntitlements(1, List.of(new EntitlementDetail() {{ setDisplayname("groupcid"); }}));
-        when(userService.getUserProfile(any(), any())).thenReturn(null);
-        when(requestBuilder.buildEntitlementArray(any(), any())).thenReturn(List.of());
-        when(requestBuilder.buildAccountRequest(any(), any(), any())).thenReturn(CreateRequest.builder().build());
-        when(accountService.createRequestBulk(any(), any())).thenReturn(new JSONObject());
-        // simulate orgService.createOrganisation
-        when(orgService.createOrganization(any(), any())).thenReturn(CreateOrganizationResponse.builder().statusCode(200).msg("ok").errorCode("0").build());
-        when(orgService.updateUserToOrganization(any(), any())).thenReturn(UpdateOrganizationResponse.builder().statusCode(200).msg("ok").errorCode("0").build());
-        BaseResponse br = new BaseResponse();
-        br.setResponseCode("201");
-        br.setErrors(new ArrayList<ClientConfigError>());
-        when(pgService.addNewclientdetails(any(), any(), any(), any())).thenReturn(new ResponseEntity<>(br, HttpStatus.OK));
-        doNothing().when(trackService).updateTrack(any(), any(), any(), any());
+@Test
+void testUpdateTrack_EntityNull() throws Exception {
+    CreateGroupsResponse response = new CreateGroupsResponse();
+    response.setClientId("client123");
+    RequestHeader header = new RequestHeader();
+    header.setCorrelationId("corr123");
+    String rawHeader = new ObjectMapper().writeValueAsString(header);
 
-        // Simulate the commented-out block: you can temporarily uncomment the block in main code to test this
-        // Or simulate by removing the default user from validMailMap/accountMap after org creation
-        // But here, just ensure the branch can be reached
-        try (MockedStatic<InfoTypeLogEventHelper> logMock = mockStatic(InfoTypeLogEventHelper.class);
-             MockedStatic<StartAnywhereUtil> utilMock = mockStatic(StartAnywhereUtil.class)) {
-            BaseResponse resp = new BaseResponse();
-            utilMock.when(() -> StartAnywhereUtil.buildResponse(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(resp);
+    when(trackRepo.findByCorrelationIdAndClientId("corr123", "client123")).thenReturn(null);
 
-            ResponseEntity<Object> result = service.createClientConfiguration(alightRequestHeader, alightColleagueSessionToken, configRequest);
-
-            // Should still return OK due to the default user, but if you uncomment the block, it would be BAD_REQUEST
-            assertNotNull(result.getBody());
+    try (MockedStatic<StartAnywhereSecurityUtil> secUtil = mockStatic(StartAnywhereSecurityUtil.class)) {
+        secUtil.when(() -> StartAnywhereSecurityUtil.unCleanIt(any())).thenReturn(rawHeader);
+        try (MockedStatic<RequestHeader> reqHeader = mockStatic(RequestHeader.class)) {
+            reqHeader.when(() -> RequestHeader.parse(any())).thenReturn(header);
+            assertDoesNotThrow(() -> service.updateTrack(rawHeader, response));
         }
     }
+}
 
-    @Test
-    void partitionList_splitsCorrectly() {
-        // Covers the commented-out partitionList method
-        List<Integer> list = new ArrayList<>();
-        for (int i = 0; i < 10; i++) list.add(i);
-        List<List<Integer>> partitions = partitionList(list, 3);
-        assertEquals(4, partitions.size());
-        assertEquals(List.of(0,1,2), partitions.get(0));
-        assertEquals(List.of(3,4,5), partitions.get(1));
-        assertEquals(List.of(6,7,8), partitions.get(2));
-        assertEquals(List.of(9), partitions.get(3));
-    }
-    // Helper for partitionList
-    private <T> List<List<T>> partitionList(List<T> list, int maxSize) {
-        List<List<T>> partitions = new ArrayList<>();
-        for (int i = 0; i < list.size(); i += maxSize) {
-            partitions.add(list.subList(i, Math.min(i + maxSize, list.size())));
-        }
-        return partitions;
-    }
+@Test
+void testCheckValidationBeforeAsyncC_RepoThrowsException() {
+    AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
+    doThrow(new RuntimeException("Repo error")).when(service.trackRepo).findByCorrelationIdAndClientId(anyString(), anyString());
+    String requestHeader = "{}";
+    CreateGroupsResponse response = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
+    assertNotNull(response);
+}
 
-    @Test
-    void getResponseEntity_withNullHeader_doesNotThrow() throws Exception {
-        // Simulates JsonProcessingException branch in getResponseEntity
-        BaseResponse response = new BaseResponse();
-        try (MockedStatic<ResponseHeader> headerMock = mockStatic(ResponseHeader.class)) {
-            headerMock.when(ResponseHeader::new).thenThrow(JsonProcessingException.class);
-            ResponseEntity<Object> resp = invokeGetResponseEntity(response, "msg", HttpStatus.OK, null, null);
-            assertEquals(HttpStatus.OK, resp.getStatusCode());
-        }
-    }
-
-    @Test
-    void createClientConfiguration_allRequestsFailed_returnsInternalServerError_branch() throws Exception {
-        // Covers the branch where validMailMap is empty after removing due to errors
-        setupHappyPathForEntitlements(1, List.of(new EntitlementDetail() {{ setDisplayname("groupcid"); }}));
-        User user = new User(); user.setUsername("validUser");
-        when(userService.getUserProfile(any(), any())).thenReturn(user);
-        when(accountService.getAccounts(any(), any())).thenReturn(List.of(AccountDTO.of("validUser", "acc", "1")));
-
-        // Simulate orgService.createOrganization returns OK
-        when(orgService.createOrganization(any(), any())).thenReturn(CreateOrganizationResponse.builder().statusCode(200).msg("ok").errorCode("0").build());
-        // Simulate orgService.updateUserToOrganization throws FeignException (other than 412) to remove user from validMailMap
-        FeignException fe = mock(FeignException.class);
-        when(fe.status()).thenReturn(500);
-        when(orgService.updateUserToOrganization(any(), any())).thenThrow(fe);
-
-        doNothing().when(trackService).updateTrack(any(), any(), any(), any());
-
-        try (MockedStatic<StartAnywhereUtil> utilMock = mockStatic(StartAnywhereUtil.class)) {
-            BaseResponse resp = new BaseResponse();
-            utilMock.when(() -> StartAnywhereUtil.buildResponse(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(resp);
-            ResponseEntity<Object> result = service.createClientConfiguration(alightRequestHeader, alightColleagueSessionToken, configRequest);
-            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, result.getStatusCode());
-        }
-    }
-
-    @Test
-    void createClientConfiguration_securityManagerUserNull_addsInvalidError() throws Exception {
-        setupHappyPathForEntitlements(1, List.of(new EntitlementDetail() {{ setDisplayname("groupcid"); }}));
-        when(userService.getUserProfile(any(), any())).thenReturn(null);
-        when(requestBuilder.buildEntitlementArray(any(), any())).thenReturn(List.of());
-        when(requestBuilder.buildAccountRequest(any(), any(), any())).thenReturn(CreateRequest.builder().build());
-        when(accountService.createRequestBulk(any(), any())).thenReturn(new JSONObject());
-        // simulate orgService.createOrganisation
-        when(orgService.createOrganization(any(), any())).thenReturn(CreateOrganizationResponse.builder().statusCode(200).msg("ok").errorCode("0").build());
-        when(orgService.updateUserToOrganization(any(), any())).thenReturn(UpdateOrganizationResponse.builder().statusCode(200).msg("ok").errorCode("0").build());
-        BaseResponse br = new BaseResponse();
-        br.setResponseCode("201");
-        br.setErrors(new ArrayList<ClientConfigError>());
-        when(pgService.addNewclientdetails(any(), any(), any(), any())).thenReturn(new ResponseEntity<>(br, HttpStatus.OK));
-        doNothing().when(trackService).updateTrack(any(), any(), any(), any());
-
-        ResponseEntity<Object> result = service.createClientConfiguration(alightRequestHeader, alightColleagueSessionToken, configRequest);
-        // Should add SAV002 error for invalid emailId
-        assertNotNull(result.getBody());
-        assertTrue(result.getBody().toString().contains("SAV002"));
-    }
+@Test
+void testCheckValidationBeforeAsyncC_StatustrackEntityNull() {
+    AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
+    com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity trackEntity =
+            new com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity();
+    trackEntity.setStatus(0);
+    trackEntity.setHitCount(1);
+    doReturn(trackEntity).when(service.trackRepo).findByCorrelationIdAndClientId(anyString(), anyString());
+    doReturn(null).when(service.trackRepo).findByClientId(anyString());
+    doReturn(3).when(service.configBean).getHitCount();
+    String requestHeader = "{}";
+    CreateGroupsResponse result = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
+    assertNotNull(result);
+}
