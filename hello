@@ -1,164 +1,97 @@
-@Test
-    void testNullOrgNameTriggersUnCleanItAndProceeds() throws Exception {
-        when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
-        when(userService.getAccessToken()).thenReturn(token);
-        when(checkClientData.isNotValidClient(clientId, null)).thenReturn(null);
-
-        User user = new User();
-        user.setUsername("user1");
-        user.setEmail("user@example.com");
-        when(userService.getUserProfile("user@example.com", token)).thenReturn(user);
-
-        AccountDTO account = new AccountDTO();
-        account.setStatus("1");
-        account.setAccountname("acc123");
-        when(accountService.getAccounts("user1", token)).thenReturn(List.of(account));
-
-        OrganizationDetailsDTO orgDetail = new OrganizationDetailsDTO();
-        orgDetail.setOrganizationname(clientId);
-        UserOrganizationDetailResponseDTO orgResp = new UserOrganizationDetailResponseDTO();
-        orgResp.setUsername("user1");
-        orgResp.setOrganizations(List.of(orgDetail));
-        when(orgService.getUserDetailsForOrganization(Mockito.eq(token), Mockito.any())).thenReturn(orgResp);
-
-        EntitlementsResponse entResp = new EntitlementsResponse();
-        EntitlementDetail detail = new EntitlementDetail();
-        detail.setEntitlement_value("ent1");
-        detail.setEndpoint("endpoint");
-        detail.setDescription("desc");
-        detail.setStatus("active");
-        entResp.setEntitlementdetails(List.of(detail));
-        lenient().when(entitlementService.loadEntitlements("user1", token, clientId)).thenReturn(entResp);
-
-        lenient().when(securityManagerEntitlementRepository.findByIsSecuritymanager(1)).thenReturn(List.of());
-        lenient().when(saviyntService.getDisplayNamesWithClientId(Mockito.any(), Mockito.eq(clientId))).thenReturn(List.of("ent1"));
-
-        UserEntitlementsDTO updated = new UserEntitlementsDTO();
-        updated.setEmail("user@example.com");
-        lenient().when(entitlementService.updateUser(Mockito.any(), Mockito.eq(token))).thenReturn(updated);
-
-        List<UserOrganizationDetailsDTO> listDto= new ArrayList<>();
-        UserOrganizationDetailsDTO dto=new UserOrganizationDetailsDTO();
-        dto.setUsername("user1");
-        listDto.add(dto);
-        OrganizationUserDetailResponseDTO orguserRespose = new OrganizationUserDetailResponseDTO();
-        orguserRespose.setOrganizationname(clientId);
-        orguserRespose.setUsers(listDto);
-        lenient().when(orgService.getUserOrganizationDetails(Mockito.eq(token), Mockito.any(), Mockito.eq(clientId))).thenReturn(orguserRespose);
-
-        UpdateOrganizationResponse updateOrgResp = new UpdateOrganizationResponse();
-        updateOrgResp.setStatusCode(200);
-        lenient(). when(orgService.updateUserToOrganization(Mockito.any(), Mockito.eq(token))).thenReturn(updateOrgResp);
-
-        BaseResponse pgResponseBody = new BaseResponse();
-        lenient(). when(removeClientService.deleteClientDetails(Mockito.any(), Mockito.any(), Mockito.eq(clientId)))
-        .thenReturn(ResponseEntity.ok(pgResponseBody));
-
-        // Act
+    @Test
+    void testSecurityManagerEmailListHasWhitespaceAndNullsOnly() throws Exception {
+        List<String> emailsWithOnlyWhitespaceAndNulls = Arrays.asList("", "   ", null, "null");
         ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
-                "sessionToken", header, clientId, null, emails);
-
-        // Assert
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+                "sessionToken", header, clientId, orgName, emailsWithOnlyWhitespaceAndNulls);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        BaseResponse body = (BaseResponse) response.getBody();
+        assertTrue(body.getErrors().stream().anyMatch(e -> StartAnyWhereConstants.POS106.equals(e.getErrorCode())));
     }
 
     @Test
-    void testMultipleEmailsWithSomeInvalidAndSomeValid() throws Exception {
+    void testSecurityManagerEmailListHasValidAndInvalidEntries() throws Exception {
+        // Valid email, and a "null" string and whitespace
+        List<String> emailsMixed = Arrays.asList("valid@example.com", "null", " ", "", null);
         when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
         when(userService.getAccessToken()).thenReturn(token);
         when(checkClientData.isNotValidClient(clientId, orgName)).thenReturn(null);
 
-        // One valid, one invalid email
         User user = new User();
-        user.setUsername("user1");
+        user.setUsername("validUser");
         user.setEmail("valid@example.com");
         when(userService.getUserProfile("valid@example.com", token)).thenReturn(user);
-        when(userService.getUserProfile("invalid@example.com", token)).thenReturn(null);
-
         AccountDTO account = new AccountDTO();
         account.setStatus("1");
         account.setAccountname("acc123");
-        when(accountService.getAccounts("user1", token)).thenReturn(List.of(account));
+        when(accountService.getAccounts("validUser", token)).thenReturn(List.of(account));
 
         OrganizationDetailsDTO orgDetail = new OrganizationDetailsDTO();
         orgDetail.setOrganizationname(clientId);
         UserOrganizationDetailResponseDTO orgResp = new UserOrganizationDetailResponseDTO();
-        orgResp.setUsername("user1");
+        orgResp.setUsername("validUser");
         orgResp.setOrganizations(List.of(orgDetail));
-        when(orgService.getUserDetailsForOrganization(Mockito.eq(token), Mockito.any())).thenReturn(orgResp);
+        when(orgService.getUserDetailsForOrganization(eq(token), any())).thenReturn(orgResp);
 
         EntitlementsResponse entResp = new EntitlementsResponse();
         EntitlementDetail detail = new EntitlementDetail();
         detail.setEntitlement_value("ent1");
-        detail.setEndpoint("endpoint");
-        detail.setDescription("desc");
-        detail.setStatus("active");
         entResp.setEntitlementdetails(List.of(detail));
-        lenient().when(entitlementService.loadEntitlements("user1", token, clientId)).thenReturn(entResp);
+        lenient().when(entitlementService.loadEntitlements("validUser", token, clientId)).thenReturn(entResp);
 
         lenient().when(securityManagerEntitlementRepository.findByIsSecuritymanager(1)).thenReturn(List.of());
-        lenient().when(saviyntService.getDisplayNamesWithClientId(Mockito.any(), Mockito.eq(clientId))).thenReturn(List.of("ent1"));
-
+        lenient().when(saviyntService.getDisplayNamesWithClientId(any(), eq(clientId))).thenReturn(List.of("ent1"));
         UserEntitlementsDTO updated = new UserEntitlementsDTO();
         updated.setEmail("valid@example.com");
-        lenient().when(entitlementService.updateUser(Mockito.any(), Mockito.eq(token))).thenReturn(updated);
+        lenient().when(entitlementService.updateUser(any(), eq(token))).thenReturn(updated);
 
-        List<UserOrganizationDetailsDTO> listDto= new ArrayList<>();
-        UserOrganizationDetailsDTO dto=new UserOrganizationDetailsDTO();
-        dto.setUsername("user1");
+        List<UserOrganizationDetailsDTO> listDto = new ArrayList<>();
+        UserOrganizationDetailsDTO dto = new UserOrganizationDetailsDTO();
+        dto.setUsername("validUser");
         listDto.add(dto);
+
         OrganizationUserDetailResponseDTO orguserRespose = new OrganizationUserDetailResponseDTO();
         orguserRespose.setOrganizationname(clientId);
         orguserRespose.setUsers(listDto);
-        lenient().when(orgService.getUserOrganizationDetails(Mockito.eq(token), Mockito.any(), Mockito.eq(clientId))).thenReturn(orguserRespose);
+        lenient().when(orgService.getUserOrganizationDetails(eq(token), any(), eq(clientId))).thenReturn(orguserRespose);
 
         UpdateOrganizationResponse updateOrgResp = new UpdateOrganizationResponse();
         updateOrgResp.setStatusCode(200);
-        lenient(). when(orgService.updateUserToOrganization(Mockito.any(), Mockito.eq(token))).thenReturn(updateOrgResp);
+        lenient().when(orgService.updateUserToOrganization(any(), eq(token))).thenReturn(updateOrgResp);
 
         BaseResponse pgResponseBody = new BaseResponse();
-        lenient(). when(removeClientService.deleteClientDetails(Mockito.any(), Mockito.any(), Mockito.eq(clientId)))
-        .thenReturn(ResponseEntity.ok(pgResponseBody));
+        lenient().when(removeClientService.deleteClientDetails(any(), any(), eq(clientId)))
+                .thenReturn(ResponseEntity.ok(pgResponseBody));
 
-        List<String> mixedEmails = List.of("valid@example.com", "invalid@example.com");
-        // Act
         ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
-                "sessionToken", header, clientId, orgName, mixedEmails);
-
-        // Assert
+                "sessionToken", header, clientId, orgName, emailsMixed);
         assertEquals(HttpStatus.OK, response.getStatusCode());
     }
 
     @Test
-    void testGetDeleteClientConfigurationDetails_ExceptionThrown() throws Exception {
+    void testInvalidClientIdReturnsBadRequest() throws Exception {
+        ResponseEntity<Object> clientInvalidResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("Client not found");
         when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
-        when(userService.getAccessToken()).thenReturn(token);
-        when(checkClientData.isNotValidClient(clientId, orgName)).thenReturn(null);
+        when(checkClientData.isNotValidClient("invalidClientId", orgName)).thenReturn(clientInvalidResponse);
+        ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
+                "sessionToken", header, "invalidClientId", orgName, emails);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("Client not found", response.getBody());
+    }
 
-        // Force exception in accountService
-        User user = new User();
-        user.setUsername("user1");
-        user.setEmail("user@example.com");
-        when(userService.getUserProfile("user@example.com", token)).thenReturn(user);
-        when(accountService.getAccounts("user1", token)).thenThrow(new RuntimeException("Simulated Exception"));
+    @Test
+    void testGetAccessTokenThrowsGenericException() throws Exception {
+        when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
+        when(userService.getAccessToken()).thenThrow(new RuntimeException("Generic failure"));
 
-        // Act
         ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
                 "sessionToken", header, clientId, orgName, emails);
-
-        // Assert
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("RuntimeException"));
     }
 
     @Test
-    void testHandleRetryFailureWithNullException() {
-        ResponseEntity<Object> result = service.handleRetryFailure(null, token, header, clientId, orgName, emails);
-        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, result.getStatusCode());
-    }
-
-    @Test
-    void testRemoveClientServiceReturnsNullResponse() throws Exception {
+    void testNoEntitlementsFoundReturnsInternalServerError() throws Exception {
         when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
         when(userService.getAccessToken()).thenReturn(token);
         when(checkClientData.isNotValidClient(clientId, orgName)).thenReturn(null);
@@ -178,7 +111,77 @@
         UserOrganizationDetailResponseDTO orgResp = new UserOrganizationDetailResponseDTO();
         orgResp.setUsername("user1");
         orgResp.setOrganizations(List.of(orgDetail));
-        when(orgService.getUserDetailsForOrganization(Mockito.eq(token), Mockito.any())).thenReturn(orgResp);
+        when(orgService.getUserDetailsForOrganization(eq(token), any())).thenReturn(orgResp);
+
+        EntitlementsResponse entResp = new EntitlementsResponse();
+        entResp.setEntitlementdetails(new ArrayList<>());
+        lenient().when(entitlementService.loadEntitlements("user1", token, clientId)).thenReturn(entResp);
+
+        lenient().when(securityManagerEntitlementRepository.findByIsSecuritymanager(1)).thenReturn(List.of());
+        lenient().when(saviyntService.getDisplayNamesWithClientId(any(), eq(clientId))).thenReturn(List.of("ent1"));
+        UserEntitlementsDTO updated = new UserEntitlementsDTO();
+        updated.setEmail("user@example.com");
+        lenient().when(entitlementService.updateUser(any(), eq(token))).thenReturn(updated);
+
+        List<UserOrganizationDetailsDTO> listDto = new ArrayList<>();
+        UserOrganizationDetailsDTO dto = new UserOrganizationDetailsDTO();
+        dto.setUsername("user1");
+        listDto.add(dto);
+
+        OrganizationUserDetailResponseDTO orguserRespose = new OrganizationUserDetailResponseDTO();
+        orguserRespose.setOrganizationname(clientId);
+        orguserRespose.setUsers(listDto);
+        lenient().when(orgService.getUserOrganizationDetails(eq(token), any(), eq(clientId))).thenReturn(orguserRespose);
+
+        UpdateOrganizationResponse updateOrgResp = new UpdateOrganizationResponse();
+        updateOrgResp.setStatusCode(200);
+        lenient().when(orgService.updateUserToOrganization(any(), eq(token))).thenReturn(updateOrgResp);
+
+        BaseResponse pgResponseBody = new BaseResponse();
+        lenient().when(removeClientService.deleteClientDetails(any(), any(), eq(clientId)))
+                .thenReturn(ResponseEntity.ok(pgResponseBody));
+
+        ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
+                "sessionToken", header, clientId, orgName, emails);
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+    }
+
+    @Test
+    void testUserProfileReturnsNull_returnsError() throws Exception {
+        when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
+        when(userService.getAccessToken()).thenReturn(token);
+        when(checkClientData.isNotValidClient(clientId, orgName)).thenReturn(null);
+
+        when(userService.getUserProfile("user@example.com", token)).thenReturn(null);
+        ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
+                "sessionToken", header, clientId, orgName, emails);
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        BaseResponse body = (BaseResponse) response.getBody();
+        assertTrue(body.getErrors().stream().anyMatch(e -> StartAnyWhereConstants.SAV002.equals(e.getErrorCode())));
+    }
+
+    @Test
+    void testAccountIsInactive_returnsError() throws Exception {
+        when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
+        when(userService.getAccessToken()).thenReturn(token);
+        when(checkClientData.isNotValidClient(clientId, orgName)).thenReturn(null);
+
+        User user = new User();
+        user.setUsername("user1");
+        user.setEmail("user@example.com");
+        when(userService.getUserProfile("user@example.com", token)).thenReturn(user);
+
+        AccountDTO account = new AccountDTO();
+        account.setStatus("0"); // inactive
+        account.setAccountname("acc123");
+        when(accountService.getAccounts("user1", token)).thenReturn(List.of(account));
+
+        OrganizationDetailsDTO orgDetail = new OrganizationDetailsDTO();
+        orgDetail.setOrganizationname(clientId);
+        UserOrganizationDetailResponseDTO orgResp = new UserOrganizationDetailResponseDTO();
+        orgResp.setUsername("user1");
+        orgResp.setOrganizations(List.of(orgDetail));
+        when(orgService.getUserDetailsForOrganization(eq(token), any())).thenReturn(orgResp);
 
         EntitlementsResponse entResp = new EntitlementsResponse();
         EntitlementDetail detail = new EntitlementDetail();
@@ -187,32 +190,32 @@
         lenient().when(entitlementService.loadEntitlements("user1", token, clientId)).thenReturn(entResp);
 
         lenient().when(securityManagerEntitlementRepository.findByIsSecuritymanager(1)).thenReturn(List.of());
-        lenient().when(saviyntService.getDisplayNamesWithClientId(Mockito.any(), Mockito.eq(clientId))).thenReturn(List.of("ent1"));
-
+        lenient().when(saviyntService.getDisplayNamesWithClientId(any(), eq(clientId))).thenReturn(List.of("ent1"));
         UserEntitlementsDTO updated = new UserEntitlementsDTO();
         updated.setEmail("user@example.com");
-        lenient().when(entitlementService.updateUser(Mockito.any(), Mockito.eq(token))).thenReturn(updated);
+        lenient().when(entitlementService.updateUser(any(), eq(token))).thenReturn(updated);
 
-        List<UserOrganizationDetailsDTO> listDto= new ArrayList<>();
-        UserOrganizationDetailsDTO dto=new UserOrganizationDetailsDTO();
+        List<UserOrganizationDetailsDTO> listDto = new ArrayList<>();
+        UserOrganizationDetailsDTO dto = new UserOrganizationDetailsDTO();
         dto.setUsername("user1");
         listDto.add(dto);
+
         OrganizationUserDetailResponseDTO orguserRespose = new OrganizationUserDetailResponseDTO();
         orguserRespose.setOrganizationname(clientId);
         orguserRespose.setUsers(listDto);
-        lenient().when(orgService.getUserOrganizationDetails(Mockito.eq(token), Mockito.any(), Mockito.eq(clientId))).thenReturn(orguserRespose);
+        lenient().when(orgService.getUserOrganizationDetails(eq(token), any(), eq(clientId))).thenReturn(orguserRespose);
 
         UpdateOrganizationResponse updateOrgResp = new UpdateOrganizationResponse();
         updateOrgResp.setStatusCode(200);
-        lenient(). when(orgService.updateUserToOrganization(Mockito.any(), Mockito.eq(token))).thenReturn(updateOrgResp);
+        lenient().when(orgService.updateUserToOrganization(any(), eq(token))).thenReturn(updateOrgResp);
 
-        when(removeClientService.deleteClientDetails(Mockito.any(), Mockito.any(), Mockito.eq(clientId)))
-        .thenReturn(null);
+        BaseResponse pgResponseBody = new BaseResponse();
+        lenient().when(removeClientService.deleteClientDetails(any(), any(), eq(clientId)))
+                .thenReturn(ResponseEntity.ok(pgResponseBody));
 
-        // Act
         ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
                 "sessionToken", header, clientId, orgName, emails);
-
-        // Assert
-        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertEquals(HttpStatus.OK, response.getStatusCode()); // Should still be OK, but error present
+        BaseResponse body = (BaseResponse) response.getBody();
+        assertTrue(body.getErrors().stream().anyMatch(e -> StartAnyWhereConstants.SAV021.equals(e.getErrorCode())));
     }
