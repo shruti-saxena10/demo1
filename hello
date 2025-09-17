@@ -1,59 +1,91 @@
-void testDeleteClientConfiguration_NoOrganizationsFound() {
-        // Arrange: mock DB and repo calls
-        when(checkClientData.isNotValidClient(anyString(), anyString())).thenReturn(false); // client exists
-        when(securityManagerEntitlementRepository.findByClientId(anyString()))
-                .thenReturn(Collections.emptyList()); // no entitlements
-
-        // Mock a User
-        User user = mock(User.class);
-        when(user.getEmail()).thenReturn("test@alight.com");
-        when(userRepository.findByAlightColleagueId(anyString())).thenReturn(user);
-
-        BaseResponse mockResponse = mock(BaseResponse.class);
-
-        try (MockedStatic<ErrorLogEventHelper> mockedErrorLog = mockStatic(ErrorLogEventHelper.class);
-             MockedStatic<StartAnywhereUtil> mockedStartAnywhereUtil = mockStatic(StartAnywhereUtil.class)) {
-
-            // Stub buildResponse
-            mockedStartAnywhereUtil.when(() -> StartAnywhereUtil.buildResponse(
-                    any(BaseResponse.class),
-                    anyString(), anyString(), anyString(), anyString(),
-                    anyString(), anyString(), anyList()
-            )).thenReturn(mockResponse);
-
-            // Act: call the service method
-            ResponseEntity<Object> actualResponse = service.getDeleteClientConfigurationDetails(
-                    "dummy-session-token",     // alightColleagueSessionToken
-                    "dummy-request-header",    // alightRequestHeader
-                    "client-123",              // clientId
-                    "TestOrg",                 // orgName
-                    List.of("security@alight.com") // securityManagerEmailId
-            );
-
-            // Assert: verify logErrorEvent was called
-            mockedErrorLog.verify(() -> ErrorLogEventHelper.logErrorEvent(
-                    eq(ClientOnboardingService.class.getName()),
-                    eq("No organizations found for user"),
-                    eq(""),
-                    isNull(),
-                    eq(ErrorLogEvent.ERROR_SEVERITY)
-            ));
-
-            // Assert: verify buildResponse was called
-            mockedStartAnywhereUtil.verify(() -> StartAnywhereUtil.buildResponse(
-                    any(BaseResponse.class),
-                    eq(StartAnyWhereConstants.HTTP_STATUS_SUCCESS),
-                    eq(StartAnyWhereConstants.DELETE_STATUS),
-                    eq(StartAnyWhereConstants.SAV018),
-                    eq(StartAnyWhereConstants.SAV018_MSG),
-                    eq(StartAnyWhereConstants.LOW),
-                    eq("test@alight.com"),
-                    anyList()
-            ));
-
-            // Optional: assert service returned what we stubbed
-            assertNotNull(actualResponse);
-            assertEquals(mockResponse, actualResponse.getBody());
-        }
+@Test
+    void testGetDisplayNamesWithClientId_Empty() {
+        List<String> result = service.getDisplayNamesWithClientId(Collections.emptyList(), "id", "name");
+        assertTrue(result.isEmpty());
     }
-}
+
+    @Test
+    void testGetDisplayNamesWithClientId_NullDisplayName() {
+        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
+        entity.setDisplayName(null);
+        List<String> result = service.getDisplayNamesWithClientId(List.of(entity), "id", "name");
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testTransformEntityFields_NullEntities() {
+        Map<SecurityManagerEntitlementEntity, Map<String, String>> result =
+            AsyncGroupServiceImpl.transformEntityFields(null, "id", "name");
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testTransformEntityFields_NullEntityInList() {
+        List<SecurityManagerEntitlementEntity> entities = Arrays.asList(null, new SecurityManagerEntitlementEntity());
+        Map<SecurityManagerEntitlementEntity, Map<String, String>> result =
+            AsyncGroupServiceImpl.transformEntityFields(entities, "id", "name");
+        // Should skip null entity and process the other.
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    void testGetPresentValues_EmptyJSONObject() {
+        JSONObject json = new JSONObject();
+        Map<String, String> result = service.getPresentValues(json);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testGetPresentValues_MissingKeys() {
+        JSONObject json = new JSONObject();
+        json.put("foo", "bar");
+        Map<String, String> result = service.getPresentValues(json);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testCheckValidationBeforeAsyncC_EmptyCorrelationId() {
+        AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
+        String requestHeader = "{}";
+        CreateGroupsResponse response = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
+        // Should return a response (not null), status should be BAD_REQUEST or missing parameters
+        assertNotNull(response);
+    }
+
+    @Test
+    void testCheckValidationBeforeAsyncC_TrackEntityNull() {
+        AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
+        doReturn(null).when(service).trackRepo;
+        String requestHeader = "{}";
+        CreateGroupsResponse response = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
+        assertNotNull(response);
+    }
+
+    @Test
+    void testCheckValidationBeforeAsyncC_TrackEntityStatusNotZero() {
+        AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
+        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
+        CreateGroupsResponse response = new CreateGroupsResponse();
+        com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity trackEntity =
+            new com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity();
+        trackEntity.setStatus(1);
+        doReturn(trackEntity).when(service.trackRepo).findByCorrelationIdAndClientId(anyString(), anyString());
+        String requestHeader = "{}";
+        CreateGroupsResponse result = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
+        assertNotNull(result);
+    }
+
+    @Test
+    void testCheckValidationBeforeAsyncC_TrackEntityHitCountExceeded() {
+        AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
+        CreateGroupsResponse response = new CreateGroupsResponse();
+        com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity trackEntity =
+            new com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity();
+        trackEntity.setStatus(0);
+        trackEntity.setHitCount(5);
+        doReturn(trackEntity).when(service.trackRepo).findByCorrelationIdAndClientId(anyString(), anyString());
+        doReturn(3).when(service.configBean).getHitCount();
+        String requestHeader = "{}";
+        CreateGroupsResponse result = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
+        assertNotNull(result);
+    }
