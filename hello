@@ -1,7 +1,8 @@
-@Test
-    void testDeleteClientConfiguration_NoOrganizationsFound() {
-        // Arrange: force "no organizations found" condition
-        when(userOrgRepository.findByUserId(anyString())).thenReturn(Collections.emptyList());
+void testDeleteClientConfiguration_NoOrganizationsFound() {
+        // Arrange: mock DB and repo calls
+        when(checkClientData.isNotValidClient(anyString(), anyString())).thenReturn(false); // client exists
+        when(securityManagerEntitlementRepository.findByClientId(anyString()))
+                .thenReturn(Collections.emptyList()); // no entitlements
 
         // Mock a User
         User user = mock(User.class);
@@ -13,7 +14,7 @@
         try (MockedStatic<ErrorLogEventHelper> mockedErrorLog = mockStatic(ErrorLogEventHelper.class);
              MockedStatic<StartAnywhereUtil> mockedStartAnywhereUtil = mockStatic(StartAnywhereUtil.class)) {
 
-            // Stub buildResponse so it doesn’t return null
+            // Stub buildResponse
             mockedStartAnywhereUtil.when(() -> StartAnywhereUtil.buildResponse(
                     any(BaseResponse.class),
                     anyString(), anyString(), anyString(), anyString(),
@@ -55,3 +56,4 @@
             assertEquals(mockResponse, actualResponse.getBody());
         }
     }
+}
