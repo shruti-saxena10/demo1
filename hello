@@ -1,72 +1,57 @@
-import static org.mockito.Mockito.*;
-import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
+@Test
+    void testDeleteClientConfiguration_NoOrganizationsFound() {
+        // Arrange: force "no organizations found" condition
+        when(userOrgRepository.findByUserId(anyString())).thenReturn(Collections.emptyList());
 
-import java.util.List;
+        // Mock a User
+        User user = mock(User.class);
+        when(user.getEmail()).thenReturn("test@alight.com");
+        when(userRepository.findByAlightColleagueId(anyString())).thenReturn(user);
 
-class ClientOnboardingServiceTest {
-
-    @Test
-    void testStaticCalls_NoOrganizationsFound() {
-        // Arrange
-        BaseResponse response = mock(BaseResponse.class);
-        List<String> errors = List.of("some-error");
-        String userEmail = "test@alight.com";
+        BaseResponse mockResponse = mock(BaseResponse.class);
 
         try (MockedStatic<ErrorLogEventHelper> mockedErrorLog = mockStatic(ErrorLogEventHelper.class);
              MockedStatic<StartAnywhereUtil> mockedStartAnywhereUtil = mockStatic(StartAnywhereUtil.class)) {
 
-            // Stub buildResponse so it doesn't return null
+            // Stub buildResponse so it doesn’t return null
             mockedStartAnywhereUtil.when(() -> StartAnywhereUtil.buildResponse(
                     any(BaseResponse.class),
-                    anyString(),
-                    anyString(),
-                    anyString(),
-                    anyString(),
-                    anyString(),
-                    anyString(),
-                    anyList()
-            )).thenReturn(response);
+                    anyString(), anyString(), anyString(), anyString(),
+                    anyString(), anyString(), anyList()
+            )).thenReturn(mockResponse);
 
-            // --- Act: directly call the static methods like your code would ---
-            ErrorLogEventHelper.logErrorEvent(
-                    this.getClass().getName(),
-                    "No organizations found for user",
-                    "",
-                    null,
-                    ErrorLogEvent.ERROR_SEVERITY
+            // Act: call the service method
+            ResponseEntity<Object> actualResponse = service.getDeleteClientConfigurationDetails(
+                    "dummy-session-token",     // alightColleagueSessionToken
+                    "dummy-request-header",    // alightRequestHeader
+                    "client-123",              // clientId
+                    "TestOrg",                 // orgName
+                    List.of("security@alight.com") // securityManagerEmailId
             );
 
-            StartAnywhereUtil.buildResponse(
-                    response,
-                    StartAnyWhereConstants.HTTP_STATUS_SUCCESS,
-                    StartAnyWhereConstants.DELETE_STATUS,
-                    StartAnyWhereConstants.SAV018,
-                    StartAnyWhereConstants.SAV018_MSG,
-                    StartAnyWhereConstants.LOW,
-                    userEmail,
-                    errors
-            );
-
-            // --- Assert: verify both static methods were called with expected args ---
+            // Assert: verify logErrorEvent was called
             mockedErrorLog.verify(() -> ErrorLogEventHelper.logErrorEvent(
-                    eq(ClientOnboardingServiceTest.class.getName()), // test class name here
+                    eq(ClientOnboardingService.class.getName()),
                     eq("No organizations found for user"),
                     eq(""),
                     isNull(),
                     eq(ErrorLogEvent.ERROR_SEVERITY)
             ));
 
+            // Assert: verify buildResponse was called
             mockedStartAnywhereUtil.verify(() -> StartAnywhereUtil.buildResponse(
-                    eq(response),
+                    any(BaseResponse.class),
                     eq(StartAnyWhereConstants.HTTP_STATUS_SUCCESS),
                     eq(StartAnyWhereConstants.DELETE_STATUS),
                     eq(StartAnyWhereConstants.SAV018),
                     eq(StartAnyWhereConstants.SAV018_MSG),
                     eq(StartAnyWhereConstants.LOW),
-                    eq(userEmail),
-                    eq(errors)
+                    eq("test@alight.com"),
+                    anyList()
             ));
+
+            // Optional: assert service returned what we stubbed
+            assertNotNull(actualResponse);
+            assertEquals(mockResponse, actualResponse.getBody());
         }
     }
-}
