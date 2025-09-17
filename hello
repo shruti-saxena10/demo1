@@ -1,265 +1,178 @@
- @InjectMocks
-    private SaviyntLogin saviyntLogin;
+ @Test
+    void testGetClientConfigurationDetails_IOExceptionThrown() throws Exception {
+        ClientRequest request = new ClientRequest();
+        request.setClientId("IOEX");
+        request.setSecurityManagers(new ArrayList<>(List.of(new SecurityManagerRequest("x@example.com"))));
 
-    @BeforeEach
-    void setup() throws Exception {
-        saviyntLogin = new SaviyntLogin();
-        setField("profile", "prod"); // default non-localdev
-    }
-
-    void setField(String name, Object value) throws Exception {
-        Field field = SaviyntLogin.class.getDeclaredField(name);
-        field.setAccessible(true);
-        field.set(saviyntLogin, value);
-    }
-
-    // ✅ 1. Secrets contain both username and password
-    @Test
-    void testLoadLoginData_success() {
-        Map<String, String> secrets = new HashMap<>();
-        secrets.put("controlcenter.startanywhere.saviynt.username", "user1 ");
-        secrets.put("controlcenter.startanywhere.saviynt.password", "pass1 ");
-
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNotNull(data);
-            assertEquals("user1", data.getUsername());
-            assertEquals("pass1", data.getPassword());
-        }
-    }
-
-    // ✅ 2. Secrets missing username, profile ≠ localdev → logs error
-    @Test
-    void testLoadLoginData_missingUsername_logsError() {
-        Map<String, String> secrets = new HashMap<>();
-        secrets.put("controlcenter.startanywhere.saviynt.password", "pass1");
-
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNull(data); // username missing
-        }
-    }
-
-    // ✅ 3. Secrets missing password, profile ≠ localdev → logs error
-    @Test
-    void testLoadLoginData_missingPassword_logsError() {
-        Map<String, String> secrets = new HashMap<>();
-        secrets.put("controlcenter.startanywhere.saviynt.username", "user1");
-
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNull(data); // password missing
-        }
-    }
-
-    // ✅ 4. Secrets missing both, profile = localdev → no logging
-    @Test
-    void testLoadLoginData_localdev_skipsLogging() throws Exception {
-        setField("profile", "localdev");
-
-        Map<String, String> secrets = new HashMap<>(); // empty
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNull(data); // no secrets
-        }
-    }
-
-    // ✅ 5. getLoginData() lazy loads once
-    @Test
-    void testGetLoginData_lazyLoad() {
-        Map<String, String> secrets = new HashMap<>();
-        secrets.put("controlcenter.startanywhere.saviynt.username", "lazyuser");
-        secrets.put("controlcenter.startanywhere.saviynt.password", "lazypass");
-
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            LoginData data1 = saviyntLogin.getLoginData();
-            LoginData data2 = saviyntLogin.getLoginData();
-
-            assertSame(data1, data2); // cached
-            assertEquals("lazyuser", data1.getUsername());
-        }
-    }
-
-    // ✅ 6. @PostConstruct init() loads loginData
-    @Test
-    void testInit_postConstruct() {
-        Map<String, String> secrets = new HashMap<>();
-        secrets.put("controlcenter.startanywhere.saviynt.username", "inituser");
-        secrets.put("controlcenter.startanywhere.saviynt.password", "initpass");
-
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            saviyntLogin.init(); // simulate @PostConstruct
-            LoginData data = saviyntLogin.getLoginData();
-
-            assertEquals("inituser", data.getUsername());
-            assertEquals("initpass", data.getPassword());
-        }
+        when(clientDataService.getClientData(any(), any(), eq("IOEX"))).thenThrow(new IOException("IO Error"));
+        ClientConfigurationResponse response = service.getClientConfigurationDetails("tok", "hdr", request);
+        assertEquals("500", response.getResponseCode());
     }
 
     @Test
-    void testLoadLoginData_missingUsername_andLogs() throws Exception {
-        Map<String, String> secrets = new HashMap<>();
-        secrets.put("controlcenter.startanywhere.saviynt.password", "secret-password");
+    void testGetClientConfigurationDetails_RuntimeExceptionThrown() throws Exception {
+        ClientRequest request = new ClientRequest();
+        request.setClientId("RTEX");
+        request.setSecurityManagers(new ArrayList<>(List.of(new SecurityManagerRequest("x@example.com"))));
 
-        AHBaseException exception = new AHBaseException(); // concrete instance
-
-        try (
-            MockedStatic<DockerSecretsUtil> dockerMock = mockStatic(DockerSecretsUtil.class);
-            MockedStatic<ErrorLogEventHelper> logMock = mockStatic(ErrorLogEventHelper.class)
-        ) {
-            dockerMock.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            // Stub log call so it's callable with expected args
-            logMock.when(() -> ErrorLogEventHelper.logErrorEvent(
-                SaviyntLogin.class.getName(),
-                "controlcenter.startanywhere.saviynt.username is not configured in secret",
-                "getSaviyntLogin",
-                exception,
-                ErrorLogEvent.ERROR_SEVERITY
-            )).thenCallRealMethod();
-
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNull(data);
-        }
+        when(clientDataService.getClientData(any(), any(), eq("RTEX"))).thenThrow(new RuntimeException("RT Error"));
+        ClientConfigurationResponse response = service.getClientConfigurationDetails("tok", "hdr", request);
+        assertEquals("500", response.getResponseCode());
     }
 
     @Test
-    void testLoadLoginData_missingPassword_andLogs() throws Exception {
-        Map<String, String> secrets = new HashMap<>();
-        secrets.put("controlcenter.startanywhere.saviynt.username", "secret-user");
+    void testGetClientConfigurationDetails_DuplicateEmailsOnlyOneProcessed() throws Exception {
+        ClientRequest request = new ClientRequest();
+        request.setClientId("DUPLICATE");
+        SecurityManagerRequest sm1 = new SecurityManagerRequest("duplicate@example.com");
+        SecurityManagerRequest sm2 = new SecurityManagerRequest("DUPLICATE@EXAMPLE.COM"); // same, different case
+        request.setSecurityManagers(new ArrayList<>(List.of(sm1, sm2)));
 
-        AHBaseException exception = new AHBaseException(); // concrete instance
+        ClientResponse clientData = new ClientResponse();
+        when(clientDataService.getClientData(any(), any(), eq("DUPLICATE"))).thenReturn(clientData);
+        when(userService.getAccessToken()).thenReturn("token");
 
-        try (
-            MockedStatic<DockerSecretsUtil> dockerMock = mockStatic(DockerSecretsUtil.class);
-            MockedStatic<ErrorLogEventHelper> logMock = mockStatic(ErrorLogEventHelper.class)
-        ) {
-            dockerMock.when(DockerSecretsUtil::load).thenReturn(secrets);
+        User user = new User();
+        user.setEmail("duplicate@example.com");
+        user.setUsername("dupUser");
+        UserDetailsResponse userDetails = new UserDetailsResponse();
+        userDetails.setUserdetails(List.of(user));
+        when(requestBuilder.buildGetUserQuery(anyString())).thenReturn("query");
+        when(saviyntClient.getUser(any(), any())).thenReturn(userDetails);
 
-            // Stub log call with concrete args
-            logMock.when(() -> ErrorLogEventHelper.logErrorEvent(
-                SaviyntLogin.class.getName(),
-                "controlcenter.startanywhere.saviynt.password is not configured in secret",
-                "getSaviyntLogin",
-                exception,
-                ErrorLogEvent.ERROR_SEVERITY
-            )).thenCallRealMethod();
+        OrganizationDetailsDTO org = new OrganizationDetailsDTO();
+        org.setOrganizationname("DUPLICATE");
+        UserOrganizationDetailResponseDTO orgResp = new UserOrganizationDetailResponseDTO();
+        orgResp.setOrganizations(List.of(org));
+        when(saviyntClient.getOrganizationUserDetails(any(), any())).thenReturn(orgResp);
 
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNull(data);
-        }
+        SecurityManagerEntitlementEntity ent = new SecurityManagerEntitlementEntity();
+        ent.setDisplayName("Role-<ClientID>");
+        when(entitlementRepo.findByIsSecuritymanager(1)).thenReturn(List.of(ent));
+
+        EntitlementDetail detail = new EntitlementDetail();
+        detail.setEntitlement_value("PFX_Role-DUPLICATE,APP");
+        detail.setEntitlementOwner(List.of("dupUser"));
+        detail.setStatus("Active");
+        detail.setEndpoint("endpoint");
+        detail.setDescription("desc");
+        EntitlementsResponse entResp = new EntitlementsResponse();
+        entResp.setStatusCode(200);
+        entResp.setEntitlementdetails(List.of(detail));
+        when(saviyntClient.getEntitlements(any(), any())).thenReturn(entResp);
+
+        ClientConfigurationResponse response = service.getClientConfigurationDetails("token", "header", request);
+        assertEquals(1, response.getSecurityManagers().size()); // Only one processed
     }
 
-    // 🆕 7. getFreshLoginData() always loads new LoginData (not cached)
     @Test
-    void testGetFreshLoginData_alwaysLoadsNewInstance() {
-        Map<String, String> secrets1 = new HashMap<>();
-        secrets1.put("controlcenter.startanywhere.saviynt.username", "freshuser");
-        secrets1.put("controlcenter.startanywhere.saviynt.password", "freshpass");
+    void testDetermineUserTypeByEmailDomain_internal() throws Exception {
+        DomainLookup domain = new DomainLookup();
+        domain.setDomainName("internal.com");
+        when(domainRepo.findByDomainType(any())).thenReturn(List.of(domain));
 
-        Map<String, String> secrets2 = new HashMap<>();
-        secrets2.put("controlcenter.startanywhere.saviynt.username", "freshuser2");
-        secrets2.put("controlcenter.startanywhere.saviynt.password", "freshpass2");
+        Method method = FetchClientConfigurationServiceImpl.class.getDeclaredMethod(
+            "determineUserTypeByEmailDomain", String.class);
+        method.setAccessible(true);
 
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            // First call returns secrets1, second call returns secrets2
-            mocked.when(DockerSecretsUtil::load)
-                    .thenReturn(secrets1)
-                    .thenReturn(secrets2);
-
-            LoginData data1 = saviyntLogin.getFreshLoginData();
-            LoginData data2 = saviyntLogin.getFreshLoginData();
-
-            assertNotNull(data1);
-            assertNotNull(data2);
-            assertNotSame(data1, data2);
-            assertEquals("freshuser", data1.getUsername());
-            assertEquals("freshpass", data1.getPassword());
-            assertEquals("freshuser2", data2.getUsername());
-            assertEquals("freshpass2", data2.getPassword());
-        }
+        String type = (String) method.invoke(service, "user@internal.com");
+        assertEquals("internal", type);
     }
 
-    // 🆕 8. loadLoginData() handles Exception thrown by DockerSecretsUtil.load()
     @Test
-    void testLoadLoginData_handlesExceptionFromDockerSecretsUtil() {
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenThrow(new RuntimeException("docker error"));
+    void testDetermineUserTypeByEmailDomain_external() throws Exception {
+        DomainLookup domain = new DomainLookup();
+        domain.setDomainName("internal.com");
+        when(domainRepo.findByDomainType(any())).thenReturn(List.of(domain));
 
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNull(data);
-        }
+        Method method = FetchClientConfigurationServiceImpl.class.getDeclaredMethod(
+            "determineUserTypeByEmailDomain", String.class);
+        method.setAccessible(true);
+
+        String type = (String) method.invoke(service, "user@external.com");
+        assertEquals("external", type);
     }
 
-    // 🆕 9. loadLoginData() returns null if secrets are empty (and not localdev)
     @Test
-    void testLoadLoginData_emptySecrets_nonLocaldev() {
-        Map<String, String> secrets = new HashMap<>(); // empty map
+    void testIsNullOrEmpty_variousStrings() throws Exception {
+        Method method = FetchClientConfigurationServiceImpl.class.getDeclaredMethod(
+            "isNullOrEmpty", String.class);
+        method.setAccessible(true);
 
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNull(data);
-        }
+        assertTrue((Boolean) method.invoke(service, (String) null));
+        assertTrue((Boolean) method.invoke(service, ""));
+        assertTrue((Boolean) method.invoke(service, "   "));
+        assertFalse((Boolean) method.invoke(service, "abc"));
     }
 
-    // 🆕 10. loadLoginData() trims whitespace for username and password
     @Test
-    void testLoadLoginData_trimsWhitespace() {
-        Map<String, String> secrets = new HashMap<>();
-        secrets.put("controlcenter.startanywhere.saviynt.username", "  userWithSpaces  ");
-        secrets.put("controlcenter.startanywhere.saviynt.password", "  passWithSpaces  ");
-
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNotNull(data);
-            assertEquals("userWithSpaces", data.getUsername());
-            assertEquals("passWithSpaces", data.getPassword());
-        }
+    void testHandleRetryFailure_otherExceptionType() {
+        Exception ex = new Exception("Other");
+        ClientRequest request = new ClientRequest();
+        ClientConfigurationResponse result = service.handleRetryFailure(ex, "token", "header", request);
+        assertEquals("503", result.getResponseCode());
     }
 
-    // 🆕 11. getLoginData() returns null if loadLoginData returns null
     @Test
-    void testGetLoginData_returnsNullIfLoadLoginDataReturnsNull() {
-        try (MockedStatic<DockerSecretsUtil> mocked = mockStatic(DockerSecretsUtil.class)) {
-            mocked.when(DockerSecretsUtil::load).thenReturn(new HashMap<>()); // empty
-
-            LoginData data = saviyntLogin.getLoginData();
-            assertNull(data);
-        }
+    void testGetDisplayNamesWithClientId_nullDisplayNameFilteredOut() {
+        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
+        entity.setDisplayName(null);
+        List<String> result = service.getDisplayNamesWithClientId(List.of(entity), "999");
+        assertTrue(result.isEmpty());
     }
 
-    // 🆕 12. InfoTypeLogEventHelper.logInfoEvent is called in catch block
     @Test
-    void testLoadLoginData_logsInfoOnException() {
-        try (
-            MockedStatic<DockerSecretsUtil> dockerMock = mockStatic(DockerSecretsUtil.class);
-            MockedStatic<InfoTypeLogEventHelper> infoMock = mockStatic(InfoTypeLogEventHelper.class)
-        ) {
-            dockerMock.when(DockerSecretsUtil::load).thenThrow(new RuntimeException("docker error"));
+    void testGetClientConfigurationDetails_NullSecurityManagersList() throws Exception {
+        ClientRequest request = new ClientRequest();
+        request.setClientId("NULL_SM");
+        request.setSecurityManagers(null);
 
-            // Verify logInfoEvent is called in catch block
-            infoMock.when(() -> InfoTypeLogEventHelper.logInfoEvent(
-                SaviyntLogin.class.getName(),
-                "docker secrets not recived:User name not found>>>>password not found>>>"
-            )).thenCallRealMethod();
+        when(clientDataService.getClientData(any(), any(), eq("NULL_SM"))).thenReturn(new ClientResponse());
+        ClientConfigurationResponse response = service.getClientConfigurationDetails("tok", "hdr", request);
+        assertEquals("200", response.getResponseCode());
+    }
 
-            LoginData data = saviyntLogin.loadLoginData();
-            assertNull(data);
-        }
+    @Test
+    void testGetClientConfigurationDetails_EntitlementOwnerIsNullOrBlank() throws Exception {
+        ClientRequest request = new ClientRequest();
+        request.setClientId("ENTOWNER");
+        request.setSecurityManagers(new ArrayList<>(List.of(new SecurityManagerRequest("owner@example.com"))));
+
+        ClientResponse clientData = new ClientResponse();
+        when(clientDataService.getClientData(any(), any(), eq("ENTOWNER"))).thenReturn(clientData);
+        when(userService.getAccessToken()).thenReturn("token");
+
+        User user = new User();
+        user.setEmail("owner@example.com");
+        user.setUsername("ownerUser");
+        UserDetailsResponse userDetails = new UserDetailsResponse();
+        userDetails.setUserdetails(List.of(user));
+        when(requestBuilder.buildGetUserQuery(anyString())).thenReturn("query");
+        when(saviyntClient.getUser(any(), any())).thenReturn(userDetails);
+
+        OrganizationDetailsDTO org = new OrganizationDetailsDTO();
+        org.setOrganizationname("ENTOWNER");
+        UserOrganizationDetailResponseDTO orgResp = new UserOrganizationDetailResponseDTO();
+        orgResp.setOrganizations(List.of(org));
+        when(saviyntClient.getOrganizationUserDetails(any(), any())).thenReturn(orgResp);
+
+        SecurityManagerEntitlementEntity ent = new SecurityManagerEntitlementEntity();
+        ent.setDisplayName("Role-<ClientID>");
+        when(entitlementRepo.findByIsSecuritymanager(1)).thenReturn(List.of(ent));
+
+        EntitlementDetail detail = new EntitlementDetail();
+        detail.setEntitlement_value("PFX_Role-ENTOWNER,APP");
+        detail.setEntitlementOwner(List.of("", null, "ownerUser")); // one blank, one null, one valid
+        detail.setStatus("Active");
+        detail.setEndpoint("endpoint");
+        detail.setDescription("desc");
+        EntitlementsResponse entResp = new EntitlementsResponse();
+        entResp.setStatusCode(200);
+        entResp.setEntitlementdetails(List.of(detail));
+        when(saviyntClient.getEntitlements(any(), any())).thenReturn(entResp);
+
+        ClientConfigurationResponse response = service.getClientConfigurationDetails("token", "header", request);
+        assertEquals("200", response.getResponseCode());
+        assertEquals(1, response.getSecurityManagers().get(0).getEntitlements().get(0).getEntitlementOwner().size());
+        assertEquals("ownerUser", response.getSecurityManagers().get(0).getEntitlements().get(0).getEntitlementOwner().get(0).getAID());
     }
