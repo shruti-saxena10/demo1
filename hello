@@ -1,122 +1,178 @@
 @Test
-void testConstructEntitlementRequest_NullParams() {
-    UpdateUserEntitlementsRequest req = service.constructEntitlementRequest(null, null);
-    assertNotNull(req);
-    assertNull(req.getDisplayname());
-    assertNull(req.getDescription());
-}
+    void testGetClientConfigurationDetails_validationBadRequest() {
+        String token = "token";
+        String header = "header";
+        ClientRequest request = new ClientRequest();
 
-@Test
-void testGetDisplayNamesWithClientId_NullClientIdOrName() {
-    entity.setDisplayName("Group-<ClientID>");
-    List<String> result1 = service.getDisplayNamesWithClientId(List.of(entity), null, "ClientX");
-    assertTrue(result1.get(0).contains("null"));
-    List<String> result2 = service.getDisplayNamesWithClientId(List.of(entity), "123", null);
-    assertTrue(result2.get(0).contains("123"));
-}
+        ClientConfigurationResponse badResponse = new ClientConfigurationResponse();
+        badResponse.setResponseCode(StartAnyWhereConstants.HTTP_STATUS_BAD_REQUEST);
 
-@Test
-void testGetDisplayNamesWithClientId_DisplayNameNoPlaceholder() {
-    entity.setDisplayName("NoPlaceholder");
-    List<String> result = service.getDisplayNamesWithClientId(List.of(entity), "id", "name");
-    assertTrue(result.get(0).startsWith("NoPlaceholder"));
-}
+        when(fetchClientConfigurationService.validateClientRequest(header, request)).thenReturn(badResponse);
 
-@Test
-void testTransformEntityFields_EmptyClientIdName() {
-    entity.setDisplayName("Group-<ClientID>");
-    entity.setDescription("Desc-<ClientID>-<ClientName>");
-    List<SecurityManagerEntitlementEntity> entities = List.of(entity);
-    Map<SecurityManagerEntitlementEntity, Map<String, String>> result =
-            AsyncGroupServiceImpl.transformEntityFields(entities, "", "");
-    assertEquals("Group-", result.get(entity).get("displayName"));
-    assertEquals("Desc--", result.get(entity).get("description"));
-}
+        ResponseEntity<ClientConfigurationResponse> response = controllerMock.getClientConfigurationDetails(token, header, request);
 
-@Test
-void testTransformEntityFields_EntityWithNoDisplayNameOrDescription() {
-    SecurityManagerEntitlementEntity e = new SecurityManagerEntitlementEntity();
-    List<SecurityManagerEntitlementEntity> entities = List.of(e);
-    Map<SecurityManagerEntitlementEntity, Map<String, String>> result =
-            AsyncGroupServiceImpl.transformEntityFields(entities, "cid", "cname");
-    assertEquals("", result.get(e).get("displayName"));
-    assertEquals("", result.get(e).get("description"));
-}
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals(badResponse, response.getBody());
+    }
 
-@Test
-void testGetPresentValues_AllKeysMissing() {
-    JSONObject json = new JSONObject();
-    Map<String, String> result = service.getPresentValues(json);
-    assertTrue(result.isEmpty());
-}
+    // --- Missing test for addClientConfiguration: header is empty ---
+    @Test
+    void addClientConfiguration_headerEmpty_returnsBadRequest() {
+        String emptyHeader = "   ";
+        String sessionToken = "session";
+        ClientConfigurationRequest configRequest = new ClientConfigurationRequest();
 
-@Test
-void testGetPresentValues_SomeKeysPresent() {
-    JSONObject json = new JSONObject();
-    json.put("msg", "Partial");
-    Map<String, String> result = service.getPresentValues(json);
-    assertEquals("Partial", result.get("msg"));
-    assertFalse(result.containsKey("errorCode"));
-}
+        ResponseEntity<Object> response = controllerMock.addClientConfiguration(emptyHeader, sessionToken, configRequest);
 
-@Test
-void testSaveTrack_TrackRepoThrowsException() throws Exception {
-    CreateGroupsResponse response = new CreateGroupsResponse();
-    response.setClientId("client123");
-    RequestHeader header = new RequestHeader();
-    header.setCorrelationId("corr123");
-    String rawHeader = new ObjectMapper().writeValueAsString(header);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("Header cannot be empty", response.getBody());
+    }
 
-    when(trackRepo.findByCorrelationIdAndClientId("corr123", "client123")).thenThrow(new RuntimeException("DB error"));
+    // --- Missing test for deleteClientDetails: Exception not DataIntegrityViolationException ---
+    @Test
+    void deleteClientDetails_GenericException_ReturnsNotImplemented() {
+        String token = "token";
+        String header = "header";
+        String clientId = "id";
+        when(removeClientService.deleteClientDetails(token, header, clientId))
+                .thenThrow(new IllegalArgumentException("Some generic error"));
 
-    try (MockedStatic<StartAnywhereSecurityUtil> secUtil = mockStatic(StartAnywhereSecurityUtil.class)) {
-        secUtil.when(() -> StartAnywhereSecurityUtil.unCleanIt(any())).thenReturn(rawHeader);
-        try (MockedStatic<RequestHeader> reqHeader = mockStatic(RequestHeader.class)) {
-            reqHeader.when(() -> RequestHeader.parse(any())).thenReturn(header);
-            assertDoesNotThrow(() -> service.saveTrack(rawHeader, response));
+        ResponseEntity<Object> response = controllerMock.deleteClientDetails(token, header, clientId);
+
+        assertEquals(HttpStatus.NOT_IMPLEMENTED, response.getStatusCode());
+        assertTrue(response.getBody() instanceof BaseResponse);
+    }
+
+    // --- Missing test for getDeleteClientConfigurationDetails: null email list ---
+    @Test
+    void getDeleteClientConfigurationDetails_nullEmailList() {
+        String sessionToken = "sessionToken";
+        String requestHeader = "requestHeader";
+        String clientId = "client123";
+        String orgName = "orgABC";
+        List<String> emailList = null;
+
+        ResponseEntity<Object> expectedResponse = ResponseEntity.ok("Success");
+
+        Mockito.when(deleteClientConfigurationService.getDeleteClientConfigurationDetails(
+                Mockito.eq(sessionToken),
+                Mockito.eq(requestHeader),
+                Mockito.eq(clientId),
+                Mockito.eq(orgName),
+                Mockito.anyList()
+        )).thenReturn(expectedResponse);
+
+        ResponseEntity<Object> actualResponse = controllerMock.getDeleteClientConfigurationDetails(
+                sessionToken,
+                requestHeader,
+                clientId,
+                orgName,
+                emailList
+        );
+
+        assertNotNull(actualResponse);
+        assertEquals(HttpStatus.OK, actualResponse.getStatusCode());
+        assertEquals("Success", actualResponse.getBody());
+    }
+
+    // --- Missing test for getDeleteClientConfigurationDetails: empty email list ---
+    @Test
+    void getDeleteClientConfigurationDetails_emptyEmailList() {
+        String sessionToken = "sessionToken";
+        String requestHeader = "requestHeader";
+        String clientId = "client123";
+        String orgName = "orgABC";
+        List<String> emailList = new ArrayList<>();
+
+        ResponseEntity<Object> expectedResponse = ResponseEntity.ok("Success");
+
+        Mockito.when(deleteClientConfigurationService.getDeleteClientConfigurationDetails(
+                Mockito.eq(sessionToken),
+                Mockito.eq(requestHeader),
+                Mockito.eq(clientId),
+                Mockito.eq(orgName),
+                Mockito.anyList()
+        )).thenReturn(expectedResponse);
+
+        ResponseEntity<Object> actualResponse = controllerMock.getDeleteClientConfigurationDetails(
+                sessionToken,
+                requestHeader,
+                clientId,
+                orgName,
+                emailList
+        );
+
+        assertNotNull(actualResponse);
+        assertEquals(HttpStatus.OK, actualResponse.getStatusCode());
+        assertEquals("Success", actualResponse.getBody());
+    }
+
+    // --- Missing test for createClientGroups: throws InterruptedException ---
+    @Test
+    void testCreateGroups_interruptedException() throws Exception {
+        when(groupService.checkValidationBeforeAsync(token, header, clientId, clientName))
+            .thenThrow(new InterruptedException("Interrupted"));
+
+        ResponseEntity<CreateGroupsResponse> response = controllerMock.createClientGroups(token, header, clientId, clientName);
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertEquals(StartAnyWhereConstants.HTTP_STATUS_INTERNAL_SERVER_ERROR, response.getBody().getResponseCode());
+    }
+
+    // --- Missing test for addNewclientdetails: token cleaning/unCleaning logic (simulate both cleanIt and unCleanIt) ---
+    @Test
+    public void testAddNewclientdetails_tokenCleaningLogic() throws Exception {
+        String originalToken = "dirtyToken";
+        String originalHeader = "dirtyHeader";
+        ClientModel request = new ClientModel();
+        request.setClientId("00095");
+
+        String cleanedToken = "cleanedToken";
+        String cleanedHeader = "cleanedHeader";
+        String uncleanedToken = "uncleanedToken";
+        ColleagueSessionToken mockColleagueToken = Mockito.mock(ColleagueSessionToken.class);
+
+        try (MockedStatic<StartAnywhereSecurityUtil> securityUtilMock = mockStatic(StartAnywhereSecurityUtil.class);
+             MockedStatic<ColleagueSessionToken> tokenStatic = mockStatic(ColleagueSessionToken.class);
+             MockedStatic<InfoTypeLogEventHelper> logMock = mockStatic(InfoTypeLogEventHelper.class)) {
+
+            securityUtilMock.when(() -> StartAnywhereSecurityUtil.cleanIt(originalToken)).thenReturn(cleanedToken);
+            securityUtilMock.when(() -> StartAnywhereSecurityUtil.cleanIt(originalHeader)).thenReturn(cleanedHeader);
+            securityUtilMock.when(() -> StartAnywhereSecurityUtil.unCleanIt(cleanedToken)).thenReturn(uncleanedToken);
+
+            tokenStatic.when(() -> ColleagueSessionToken.parse(uncleanedToken)).thenReturn(mockColleagueToken);
+            Mockito.when(mockColleagueToken.getLdapIdFromColleagueSessionToken()).thenReturn("ldapId");
+
+            ResponseEntity<Object> expectedResponse = ResponseEntity.ok("Created");
+            Mockito.when(clientServiceMock.addNewclientdetails(uncleanedToken, cleanedHeader, "ldapId", request))
+                    .thenReturn(expectedResponse);
+
+            ResponseEntity<Object> response = controllerMock.addNewclientdetails(originalToken, originalHeader, request);
+
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertEquals("Created", response.getBody());
         }
     }
-}
 
-@Test
-void testUpdateTrack_EntityNull() throws Exception {
-    CreateGroupsResponse response = new CreateGroupsResponse();
-    response.setClientId("client123");
-    RequestHeader header = new RequestHeader();
-    header.setCorrelationId("corr123");
-    String rawHeader = new ObjectMapper().writeValueAsString(header);
+    // --- Missing test for addNewclientdetails: JsonException branch ---
+    @Test
+    public void testAddNewclientdetails_JsonException() throws Exception {
+        String token = "badToken";
+        String header = "header";
+        ClientModel request = new ClientModel();
+        request.setClientId("00095");
 
-    when(trackRepo.findByCorrelationIdAndClientId("corr123", "client123")).thenReturn(null);
+        try (MockedStatic<StartAnywhereSecurityUtil> securityUtilMock = mockStatic(StartAnywhereSecurityUtil.class);
+             MockedStatic<ColleagueSessionToken> tokenStatic = mockStatic(ColleagueSessionToken.class)) {
 
-    try (MockedStatic<StartAnywhereSecurityUtil> secUtil = mockStatic(StartAnywhereSecurityUtil.class)) {
-        secUtil.when(() -> StartAnywhereSecurityUtil.unCleanIt(any())).thenReturn(rawHeader);
-        try (MockedStatic<RequestHeader> reqHeader = mockStatic(RequestHeader.class)) {
-            reqHeader.when(() -> RequestHeader.parse(any())).thenReturn(header);
-            assertDoesNotThrow(() -> service.updateTrack(rawHeader, response));
+            securityUtilMock.when(() -> StartAnywhereSecurityUtil.cleanIt(token)).thenReturn(token);
+            securityUtilMock.when(() -> StartAnywhereSecurityUtil.cleanIt(header)).thenReturn(header);
+            securityUtilMock.when(() -> StartAnywhereSecurityUtil.unCleanIt(token)).thenReturn(token);
+
+            tokenStatic.when(() -> ColleagueSessionToken.parse(token)).thenThrow(new jakarta.json.JsonException("bad"));
+
+            ResponseEntity<Object> response = controllerMock.addNewclientdetails(token, header, request);
+
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertTrue(response.getBody() instanceof com.alight.cc.startanywhere.model.BaseResponse);
         }
     }
-}
-
-@Test
-void testCheckValidationBeforeAsyncC_RepoThrowsException() {
-    AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
-    doThrow(new RuntimeException("Repo error")).when(service.trackRepo).findByCorrelationIdAndClientId(anyString(), anyString());
-    String requestHeader = "{}";
-    CreateGroupsResponse response = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
-    assertNotNull(response);
-}
-
-@Test
-void testCheckValidationBeforeAsyncC_StatustrackEntityNull() {
-    AsyncGroupServiceImpl service = spy(new AsyncGroupServiceImpl());
-    com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity trackEntity =
-            new com.alight.cc.startanywhere.entity.ClientOnboardingRequestTrackEntity();
-    trackEntity.setStatus(0);
-    trackEntity.setHitCount(1);
-    doReturn(trackEntity).when(service.trackRepo).findByCorrelationIdAndClientId(anyString(), anyString());
-    doReturn(null).when(service.trackRepo).findByClientId(anyString());
-    doReturn(3).when(service.configBean).getHitCount();
-    String requestHeader = "{}";
-    CreateGroupsResponse result = service.checkValidationBeforeAsyncC("token", requestHeader, "client", "cname");
-    assertNotNull(result);
-}
