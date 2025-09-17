@@ -1,178 +1,218 @@
- @Test
-    void testGetClientConfigurationDetails_IOExceptionThrown() throws Exception {
-        ClientRequest request = new ClientRequest();
-        request.setClientId("IOEX");
-        request.setSecurityManagers(new ArrayList<>(List.of(new SecurityManagerRequest("x@example.com"))));
-
-        when(clientDataService.getClientData(any(), any(), eq("IOEX"))).thenThrow(new IOException("IO Error"));
-        ClientConfigurationResponse response = service.getClientConfigurationDetails("tok", "hdr", request);
-        assertEquals("500", response.getResponseCode());
-    }
-
-    @Test
-    void testGetClientConfigurationDetails_RuntimeExceptionThrown() throws Exception {
-        ClientRequest request = new ClientRequest();
-        request.setClientId("RTEX");
-        request.setSecurityManagers(new ArrayList<>(List.of(new SecurityManagerRequest("x@example.com"))));
-
-        when(clientDataService.getClientData(any(), any(), eq("RTEX"))).thenThrow(new RuntimeException("RT Error"));
-        ClientConfigurationResponse response = service.getClientConfigurationDetails("tok", "hdr", request);
-        assertEquals("500", response.getResponseCode());
-    }
-
-    @Test
-    void testGetClientConfigurationDetails_DuplicateEmailsOnlyOneProcessed() throws Exception {
-        ClientRequest request = new ClientRequest();
-        request.setClientId("DUPLICATE");
-        SecurityManagerRequest sm1 = new SecurityManagerRequest("duplicate@example.com");
-        SecurityManagerRequest sm2 = new SecurityManagerRequest("DUPLICATE@EXAMPLE.COM"); // same, different case
-        request.setSecurityManagers(new ArrayList<>(List.of(sm1, sm2)));
-
-        ClientResponse clientData = new ClientResponse();
-        when(clientDataService.getClientData(any(), any(), eq("DUPLICATE"))).thenReturn(clientData);
-        when(userService.getAccessToken()).thenReturn("token");
+@Test
+    void testNullOrgNameTriggersUnCleanItAndProceeds() throws Exception {
+        when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
+        when(userService.getAccessToken()).thenReturn(token);
+        when(checkClientData.isNotValidClient(clientId, null)).thenReturn(null);
 
         User user = new User();
-        user.setEmail("duplicate@example.com");
-        user.setUsername("dupUser");
-        UserDetailsResponse userDetails = new UserDetailsResponse();
-        userDetails.setUserdetails(List.of(user));
-        when(requestBuilder.buildGetUserQuery(anyString())).thenReturn("query");
-        when(saviyntClient.getUser(any(), any())).thenReturn(userDetails);
+        user.setUsername("user1");
+        user.setEmail("user@example.com");
+        when(userService.getUserProfile("user@example.com", token)).thenReturn(user);
 
-        OrganizationDetailsDTO org = new OrganizationDetailsDTO();
-        org.setOrganizationname("DUPLICATE");
+        AccountDTO account = new AccountDTO();
+        account.setStatus("1");
+        account.setAccountname("acc123");
+        when(accountService.getAccounts("user1", token)).thenReturn(List.of(account));
+
+        OrganizationDetailsDTO orgDetail = new OrganizationDetailsDTO();
+        orgDetail.setOrganizationname(clientId);
         UserOrganizationDetailResponseDTO orgResp = new UserOrganizationDetailResponseDTO();
-        orgResp.setOrganizations(List.of(org));
-        when(saviyntClient.getOrganizationUserDetails(any(), any())).thenReturn(orgResp);
+        orgResp.setUsername("user1");
+        orgResp.setOrganizations(List.of(orgDetail));
+        when(orgService.getUserDetailsForOrganization(Mockito.eq(token), Mockito.any())).thenReturn(orgResp);
 
-        SecurityManagerEntitlementEntity ent = new SecurityManagerEntitlementEntity();
-        ent.setDisplayName("Role-<ClientID>");
-        when(entitlementRepo.findByIsSecuritymanager(1)).thenReturn(List.of(ent));
-
+        EntitlementsResponse entResp = new EntitlementsResponse();
         EntitlementDetail detail = new EntitlementDetail();
-        detail.setEntitlement_value("PFX_Role-DUPLICATE,APP");
-        detail.setEntitlementOwner(List.of("dupUser"));
-        detail.setStatus("Active");
+        detail.setEntitlement_value("ent1");
         detail.setEndpoint("endpoint");
         detail.setDescription("desc");
-        EntitlementsResponse entResp = new EntitlementsResponse();
-        entResp.setStatusCode(200);
+        detail.setStatus("active");
         entResp.setEntitlementdetails(List.of(detail));
-        when(saviyntClient.getEntitlements(any(), any())).thenReturn(entResp);
+        lenient().when(entitlementService.loadEntitlements("user1", token, clientId)).thenReturn(entResp);
 
-        ClientConfigurationResponse response = service.getClientConfigurationDetails("token", "header", request);
-        assertEquals(1, response.getSecurityManagers().size()); // Only one processed
+        lenient().when(securityManagerEntitlementRepository.findByIsSecuritymanager(1)).thenReturn(List.of());
+        lenient().when(saviyntService.getDisplayNamesWithClientId(Mockito.any(), Mockito.eq(clientId))).thenReturn(List.of("ent1"));
+
+        UserEntitlementsDTO updated = new UserEntitlementsDTO();
+        updated.setEmail("user@example.com");
+        lenient().when(entitlementService.updateUser(Mockito.any(), Mockito.eq(token))).thenReturn(updated);
+
+        List<UserOrganizationDetailsDTO> listDto= new ArrayList<>();
+        UserOrganizationDetailsDTO dto=new UserOrganizationDetailsDTO();
+        dto.setUsername("user1");
+        listDto.add(dto);
+        OrganizationUserDetailResponseDTO orguserRespose = new OrganizationUserDetailResponseDTO();
+        orguserRespose.setOrganizationname(clientId);
+        orguserRespose.setUsers(listDto);
+        lenient().when(orgService.getUserOrganizationDetails(Mockito.eq(token), Mockito.any(), Mockito.eq(clientId))).thenReturn(orguserRespose);
+
+        UpdateOrganizationResponse updateOrgResp = new UpdateOrganizationResponse();
+        updateOrgResp.setStatusCode(200);
+        lenient(). when(orgService.updateUserToOrganization(Mockito.any(), Mockito.eq(token))).thenReturn(updateOrgResp);
+
+        BaseResponse pgResponseBody = new BaseResponse();
+        lenient(). when(removeClientService.deleteClientDetails(Mockito.any(), Mockito.any(), Mockito.eq(clientId)))
+        .thenReturn(ResponseEntity.ok(pgResponseBody));
+
+        // Act
+        ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
+                "sessionToken", header, clientId, null, emails);
+
+        // Assert
+        assertEquals(HttpStatus.OK, response.getStatusCode());
     }
 
     @Test
-    void testDetermineUserTypeByEmailDomain_internal() throws Exception {
-        DomainLookup domain = new DomainLookup();
-        domain.setDomainName("internal.com");
-        when(domainRepo.findByDomainType(any())).thenReturn(List.of(domain));
+    void testMultipleEmailsWithSomeInvalidAndSomeValid() throws Exception {
+        when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
+        when(userService.getAccessToken()).thenReturn(token);
+        when(checkClientData.isNotValidClient(clientId, orgName)).thenReturn(null);
 
-        Method method = FetchClientConfigurationServiceImpl.class.getDeclaredMethod(
-            "determineUserTypeByEmailDomain", String.class);
-        method.setAccessible(true);
+        // One valid, one invalid email
+        User user = new User();
+        user.setUsername("user1");
+        user.setEmail("valid@example.com");
+        when(userService.getUserProfile("valid@example.com", token)).thenReturn(user);
+        when(userService.getUserProfile("invalid@example.com", token)).thenReturn(null);
 
-        String type = (String) method.invoke(service, "user@internal.com");
-        assertEquals("internal", type);
+        AccountDTO account = new AccountDTO();
+        account.setStatus("1");
+        account.setAccountname("acc123");
+        when(accountService.getAccounts("user1", token)).thenReturn(List.of(account));
+
+        OrganizationDetailsDTO orgDetail = new OrganizationDetailsDTO();
+        orgDetail.setOrganizationname(clientId);
+        UserOrganizationDetailResponseDTO orgResp = new UserOrganizationDetailResponseDTO();
+        orgResp.setUsername("user1");
+        orgResp.setOrganizations(List.of(orgDetail));
+        when(orgService.getUserDetailsForOrganization(Mockito.eq(token), Mockito.any())).thenReturn(orgResp);
+
+        EntitlementsResponse entResp = new EntitlementsResponse();
+        EntitlementDetail detail = new EntitlementDetail();
+        detail.setEntitlement_value("ent1");
+        detail.setEndpoint("endpoint");
+        detail.setDescription("desc");
+        detail.setStatus("active");
+        entResp.setEntitlementdetails(List.of(detail));
+        lenient().when(entitlementService.loadEntitlements("user1", token, clientId)).thenReturn(entResp);
+
+        lenient().when(securityManagerEntitlementRepository.findByIsSecuritymanager(1)).thenReturn(List.of());
+        lenient().when(saviyntService.getDisplayNamesWithClientId(Mockito.any(), Mockito.eq(clientId))).thenReturn(List.of("ent1"));
+
+        UserEntitlementsDTO updated = new UserEntitlementsDTO();
+        updated.setEmail("valid@example.com");
+        lenient().when(entitlementService.updateUser(Mockito.any(), Mockito.eq(token))).thenReturn(updated);
+
+        List<UserOrganizationDetailsDTO> listDto= new ArrayList<>();
+        UserOrganizationDetailsDTO dto=new UserOrganizationDetailsDTO();
+        dto.setUsername("user1");
+        listDto.add(dto);
+        OrganizationUserDetailResponseDTO orguserRespose = new OrganizationUserDetailResponseDTO();
+        orguserRespose.setOrganizationname(clientId);
+        orguserRespose.setUsers(listDto);
+        lenient().when(orgService.getUserOrganizationDetails(Mockito.eq(token), Mockito.any(), Mockito.eq(clientId))).thenReturn(orguserRespose);
+
+        UpdateOrganizationResponse updateOrgResp = new UpdateOrganizationResponse();
+        updateOrgResp.setStatusCode(200);
+        lenient(). when(orgService.updateUserToOrganization(Mockito.any(), Mockito.eq(token))).thenReturn(updateOrgResp);
+
+        BaseResponse pgResponseBody = new BaseResponse();
+        lenient(). when(removeClientService.deleteClientDetails(Mockito.any(), Mockito.any(), Mockito.eq(clientId)))
+        .thenReturn(ResponseEntity.ok(pgResponseBody));
+
+        List<String> mixedEmails = List.of("valid@example.com", "invalid@example.com");
+        // Act
+        ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
+                "sessionToken", header, clientId, orgName, mixedEmails);
+
+        // Assert
+        assertEquals(HttpStatus.OK, response.getStatusCode());
     }
 
     @Test
-    void testDetermineUserTypeByEmailDomain_external() throws Exception {
-        DomainLookup domain = new DomainLookup();
-        domain.setDomainName("internal.com");
-        when(domainRepo.findByDomainType(any())).thenReturn(List.of(domain));
+    void testGetDeleteClientConfigurationDetails_ExceptionThrown() throws Exception {
+        when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
+        when(userService.getAccessToken()).thenReturn(token);
+        when(checkClientData.isNotValidClient(clientId, orgName)).thenReturn(null);
 
-        Method method = FetchClientConfigurationServiceImpl.class.getDeclaredMethod(
-            "determineUserTypeByEmailDomain", String.class);
-        method.setAccessible(true);
+        // Force exception in accountService
+        User user = new User();
+        user.setUsername("user1");
+        user.setEmail("user@example.com");
+        when(userService.getUserProfile("user@example.com", token)).thenReturn(user);
+        when(accountService.getAccounts("user1", token)).thenThrow(new RuntimeException("Simulated Exception"));
 
-        String type = (String) method.invoke(service, "user@external.com");
-        assertEquals("external", type);
+        // Act
+        ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
+                "sessionToken", header, clientId, orgName, emails);
+
+        // Assert
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertTrue(response.getBody().toString().contains("RuntimeException"));
     }
 
     @Test
-    void testIsNullOrEmpty_variousStrings() throws Exception {
-        Method method = FetchClientConfigurationServiceImpl.class.getDeclaredMethod(
-            "isNullOrEmpty", String.class);
-        method.setAccessible(true);
-
-        assertTrue((Boolean) method.invoke(service, (String) null));
-        assertTrue((Boolean) method.invoke(service, ""));
-        assertTrue((Boolean) method.invoke(service, "   "));
-        assertFalse((Boolean) method.invoke(service, "abc"));
+    void testHandleRetryFailureWithNullException() {
+        ResponseEntity<Object> result = service.handleRetryFailure(null, token, header, clientId, orgName, emails);
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, result.getStatusCode());
     }
 
     @Test
-    void testHandleRetryFailure_otherExceptionType() {
-        Exception ex = new Exception("Other");
-        ClientRequest request = new ClientRequest();
-        ClientConfigurationResponse result = service.handleRetryFailure(ex, "token", "header", request);
-        assertEquals("503", result.getResponseCode());
-    }
-
-    @Test
-    void testGetDisplayNamesWithClientId_nullDisplayNameFilteredOut() {
-        SecurityManagerEntitlementEntity entity = new SecurityManagerEntitlementEntity();
-        entity.setDisplayName(null);
-        List<String> result = service.getDisplayNamesWithClientId(List.of(entity), "999");
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void testGetClientConfigurationDetails_NullSecurityManagersList() throws Exception {
-        ClientRequest request = new ClientRequest();
-        request.setClientId("NULL_SM");
-        request.setSecurityManagers(null);
-
-        when(clientDataService.getClientData(any(), any(), eq("NULL_SM"))).thenReturn(new ClientResponse());
-        ClientConfigurationResponse response = service.getClientConfigurationDetails("tok", "hdr", request);
-        assertEquals("200", response.getResponseCode());
-    }
-
-    @Test
-    void testGetClientConfigurationDetails_EntitlementOwnerIsNullOrBlank() throws Exception {
-        ClientRequest request = new ClientRequest();
-        request.setClientId("ENTOWNER");
-        request.setSecurityManagers(new ArrayList<>(List.of(new SecurityManagerRequest("owner@example.com"))));
-
-        ClientResponse clientData = new ClientResponse();
-        when(clientDataService.getClientData(any(), any(), eq("ENTOWNER"))).thenReturn(clientData);
-        when(userService.getAccessToken()).thenReturn("token");
+    void testRemoveClientServiceReturnsNullResponse() throws Exception {
+        when(checkClientData.isCheckRequestHeader(header)).thenReturn(null);
+        when(userService.getAccessToken()).thenReturn(token);
+        when(checkClientData.isNotValidClient(clientId, orgName)).thenReturn(null);
 
         User user = new User();
-        user.setEmail("owner@example.com");
-        user.setUsername("ownerUser");
-        UserDetailsResponse userDetails = new UserDetailsResponse();
-        userDetails.setUserdetails(List.of(user));
-        when(requestBuilder.buildGetUserQuery(anyString())).thenReturn("query");
-        when(saviyntClient.getUser(any(), any())).thenReturn(userDetails);
+        user.setUsername("user1");
+        user.setEmail("user@example.com");
+        when(userService.getUserProfile("user@example.com", token)).thenReturn(user);
 
-        OrganizationDetailsDTO org = new OrganizationDetailsDTO();
-        org.setOrganizationname("ENTOWNER");
+        AccountDTO account = new AccountDTO();
+        account.setStatus("1");
+        account.setAccountname("acc123");
+        when(accountService.getAccounts("user1", token)).thenReturn(List.of(account));
+
+        OrganizationDetailsDTO orgDetail = new OrganizationDetailsDTO();
+        orgDetail.setOrganizationname(clientId);
         UserOrganizationDetailResponseDTO orgResp = new UserOrganizationDetailResponseDTO();
-        orgResp.setOrganizations(List.of(org));
-        when(saviyntClient.getOrganizationUserDetails(any(), any())).thenReturn(orgResp);
+        orgResp.setUsername("user1");
+        orgResp.setOrganizations(List.of(orgDetail));
+        when(orgService.getUserDetailsForOrganization(Mockito.eq(token), Mockito.any())).thenReturn(orgResp);
 
-        SecurityManagerEntitlementEntity ent = new SecurityManagerEntitlementEntity();
-        ent.setDisplayName("Role-<ClientID>");
-        when(entitlementRepo.findByIsSecuritymanager(1)).thenReturn(List.of(ent));
-
-        EntitlementDetail detail = new EntitlementDetail();
-        detail.setEntitlement_value("PFX_Role-ENTOWNER,APP");
-        detail.setEntitlementOwner(List.of("", null, "ownerUser")); // one blank, one null, one valid
-        detail.setStatus("Active");
-        detail.setEndpoint("endpoint");
-        detail.setDescription("desc");
         EntitlementsResponse entResp = new EntitlementsResponse();
-        entResp.setStatusCode(200);
+        EntitlementDetail detail = new EntitlementDetail();
+        detail.setEntitlement_value("ent1");
         entResp.setEntitlementdetails(List.of(detail));
-        when(saviyntClient.getEntitlements(any(), any())).thenReturn(entResp);
+        lenient().when(entitlementService.loadEntitlements("user1", token, clientId)).thenReturn(entResp);
 
-        ClientConfigurationResponse response = service.getClientConfigurationDetails("token", "header", request);
-        assertEquals("200", response.getResponseCode());
-        assertEquals(1, response.getSecurityManagers().get(0).getEntitlements().get(0).getEntitlementOwner().size());
-        assertEquals("ownerUser", response.getSecurityManagers().get(0).getEntitlements().get(0).getEntitlementOwner().get(0).getAID());
+        lenient().when(securityManagerEntitlementRepository.findByIsSecuritymanager(1)).thenReturn(List.of());
+        lenient().when(saviyntService.getDisplayNamesWithClientId(Mockito.any(), Mockito.eq(clientId))).thenReturn(List.of("ent1"));
+
+        UserEntitlementsDTO updated = new UserEntitlementsDTO();
+        updated.setEmail("user@example.com");
+        lenient().when(entitlementService.updateUser(Mockito.any(), Mockito.eq(token))).thenReturn(updated);
+
+        List<UserOrganizationDetailsDTO> listDto= new ArrayList<>();
+        UserOrganizationDetailsDTO dto=new UserOrganizationDetailsDTO();
+        dto.setUsername("user1");
+        listDto.add(dto);
+        OrganizationUserDetailResponseDTO orguserRespose = new OrganizationUserDetailResponseDTO();
+        orguserRespose.setOrganizationname(clientId);
+        orguserRespose.setUsers(listDto);
+        lenient().when(orgService.getUserOrganizationDetails(Mockito.eq(token), Mockito.any(), Mockito.eq(clientId))).thenReturn(orguserRespose);
+
+        UpdateOrganizationResponse updateOrgResp = new UpdateOrganizationResponse();
+        updateOrgResp.setStatusCode(200);
+        lenient(). when(orgService.updateUserToOrganization(Mockito.any(), Mockito.eq(token))).thenReturn(updateOrgResp);
+
+        when(removeClientService.deleteClientDetails(Mockito.any(), Mockito.any(), Mockito.eq(clientId)))
+        .thenReturn(null);
+
+        // Act
+        ResponseEntity<Object> response = service.getDeleteClientConfigurationDetails(
+                "sessionToken", header, clientId, orgName, emails);
+
+        // Assert
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
     }
